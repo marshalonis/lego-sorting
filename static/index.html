@@ -102,12 +102,28 @@
         </div>
       </div>
 
-      <!-- Part number edit -->
+      <!-- Part number override -->
       <div class="card mt-8">
-        <label class="form-label">Part Number (edit if AI was wrong)</label>
+        <label class="form-label">Override Part Number</label>
         <div class="input-row">
-          <input type="text" id="manual-part-num" class="input" placeholder="e.g. 3001">
+          <input type="text" id="manual-part-num" class="input" placeholder="e.g. 3001" oninput="clearLookupResult()">
           <button class="btn btn-secondary" onclick="relookup()">Look Up</button>
+        </div>
+        <div id="lookup-loading" class="lookup-status" hidden>
+          <div class="spinner-sm"></div> Looking up on Brick Architect…
+        </div>
+        <div id="lookup-result" hidden>
+          <div class="lookup-found" id="lookup-found-card">
+            <div class="lookup-name" id="lookup-name"></div>
+            <div class="lookup-meta" id="lookup-meta"></div>
+            <div class="lookup-actions">
+              <button class="btn btn-primary btn-sm" onclick="applyLookupResult()">Use This Part</button>
+              <a id="lookup-ba-link" href="#" target="_blank" class="btn btn-secondary btn-sm">View on Brick Architect</a>
+            </div>
+          </div>
+        </div>
+        <div id="lookup-not-found" class="lookup-not-found" hidden>
+          Part not found on Brick Architect. Check the number and try again.
         </div>
       </div>
     </div>

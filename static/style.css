@@ -207,6 +207,39 @@ html, body {
 .location-badge.new   { background: rgba(245,158,11,0.12); color: var(--warning); }
 .location-icon { font-size: 18px; }
 
+/* ── Part number lookup ── */
+.lookup-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.spinner-sm {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.lookup-found {
+  margin-top: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.lookup-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.lookup-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.lookup-actions { display: flex; gap: 8px; }
+.lookup-not-found {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
 /* ── Brick Architect links ── */
 .ba-divider {
   border-top: 1px solid var(--border);

@@ -121,6 +121,43 @@ def update_settings(body: SettingsUpdate):
     return {"provider": _PROVIDER, "active": _active_model}
 
 
+# ── Brick Architect lookup ────────────────────────────────────────────────────
+
+@app.get("/api/lookup/{part_num}")
+async def lookup_part(part_num: str):
+    """Fetch part name from Brick Architect and check local catalog."""
+    import httpx, re as _re
+    ba_url = f"https://brickarchitect.com/parts/{part_num}"
+    name = None
+    found = False
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as http:
+            resp = await http.get(ba_url, follow_redirects=True)
+            if resp.status_code == 200:
+                # Title format: "3710 - 1×4 Plate - LEGO Parts Guide - Brick Architect"
+                m = _re.search(r"<title>([^<]+)</title>", resp.text, _re.IGNORECASE)
+                if m:
+                    parts = m.group(1).split(" - ")
+                    if len(parts) >= 2:
+                        name = parts[1].strip()
+                        found = True
+    except Exception:
+        pass
+
+    # Check local catalog
+    with db.db() as conn:
+        existing = db.get_part(conn, part_num)
+
+    return {
+        "part_num": part_num,
+        "name": name,
+        "found_on_brickarchitect": found,
+        "brickarchitect_url": ba_url,
+        "existing": existing,
+    }
+
+
 # ── Identify endpoint ─────────────────────────────────────────────────────────
 
 @app.post("/api/identify")

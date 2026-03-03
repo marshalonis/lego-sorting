@@ -119,45 +119,91 @@ function resetIdentify() {
   currentPart = null;
 }
 
+let _lookupResult = null;
+
+function clearLookupResult() {
+  _lookupResult = null;
+  document.getElementById('lookup-result').hidden = true;
+  document.getElementById('lookup-not-found').hidden = true;
+  document.getElementById('lookup-loading').hidden = true;
+}
+
 async function relookup() {
   const partNum = document.getElementById('manual-part-num').value.trim();
   if (!partNum) return;
+
+  clearLookupResult();
+  document.getElementById('lookup-loading').hidden = false;
+
   try {
-    const res = await fetch(`/api/parts/${encodeURIComponent(partNum)}`);
-    if (res.status === 404) {
-      alert('Part not in catalog yet.');
+    const res = await fetch(`/api/lookup/${encodeURIComponent(partNum)}`);
+    const data = await res.json();
+    document.getElementById('lookup-loading').hidden = true;
+
+    if (!data.found_on_brickarchitect) {
+      document.getElementById('lookup-not-found').hidden = false;
       return;
     }
-    const part = await res.json();
-    // Update display
-    document.getElementById('result-name').textContent = part.part_name;
-    document.getElementById('result-meta').textContent = [
-      `#${part.part_num}`, part.category,
-    ].filter(Boolean).join(' · ');
 
-    if (part.drawer_id) {
-      document.getElementById('location-found').hidden = false;
-      document.getElementById('location-text').textContent =
-        `Cabinet ${part.cabinet} · ${part.row}${part.col}`;
-      document.getElementById('location-new').hidden = true;
-      document.getElementById('assign-section').hidden = true;
-      document.getElementById('edit-section').hidden = false;
+    _lookupResult = data;
+
+    // Catalog status line
+    let metaParts = [`#${esc(data.part_num)}`];
+    if (data.existing?.drawer_id) {
+      metaParts.push(`In catalog — Cabinet ${data.existing.cabinet}·${data.existing.row}${data.existing.col}`);
     } else {
-      document.getElementById('location-found').hidden = true;
-      document.getElementById('location-new').hidden = false;
-      document.getElementById('assign-section').hidden = false;
-      document.getElementById('edit-section').hidden = true;
+      metaParts.push('Not yet in catalog');
     }
-    currentPart = part;
-    if (currentAi) currentAi.part_num = partNum;
-    // Update Brick Architect links
-    document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${encodeURIComponent(partNum)}`;
-    document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}.lbx`;
-    document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}-qr.lbx`;
-    document.getElementById('brickarchitect-section').hidden = false;
+
+    document.getElementById('lookup-name').textContent = data.name;
+    document.getElementById('lookup-meta').textContent = metaParts.join(' · ');
+    document.getElementById('lookup-ba-link').href = data.brickarchitect_url;
+    document.getElementById('lookup-result').hidden = false;
+
   } catch (err) {
-    alert('Error: ' + err.message);
+    document.getElementById('lookup-loading').hidden = true;
+    alert('Lookup error: ' + err.message);
   }
+}
+
+function applyLookupResult() {
+  if (!_lookupResult) return;
+  const data = _lookupResult;
+
+  // Update main result card
+  document.getElementById('result-name').textContent = data.name;
+  document.getElementById('result-meta').textContent = [
+    `#${data.part_num}`, currentAi?.category,
+  ].filter(Boolean).join(' · ');
+  if (currentAi) currentAi.part_num = data.part_num;
+
+  // Update location display
+  if (data.existing?.drawer_id) {
+    document.getElementById('location-found').hidden = false;
+    document.getElementById('location-text').textContent =
+      `Cabinet ${data.existing.cabinet} · ${data.existing.row}${data.existing.col}`;
+    document.getElementById('location-new').hidden = true;
+    document.getElementById('assign-section').hidden = true;
+    document.getElementById('edit-section').hidden = false;
+    currentPart = data.existing;
+  } else {
+    document.getElementById('location-found').hidden = true;
+    document.getElementById('location-new').hidden = false;
+    document.getElementById('assign-section').hidden = false;
+    document.getElementById('edit-section').hidden = true;
+    currentPart = null;
+  }
+
+  // Update Brick Architect links
+  const pn = encodeURIComponent(data.part_num);
+  document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${pn}`;
+  document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
+  document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
+  document.getElementById('brickarchitect-section').hidden = false;
+
+  // Pre-fill drawer picker part name
+  clearLookupResult();
+  document.getElementById('manual-part-num').value = data.part_num;
 }
 
 function openEditForCurrent() {

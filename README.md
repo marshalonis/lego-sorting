@@ -15,16 +15,7 @@ pip install -r requirements.txt
 
 ## Starting the Server
 
-### Option 1 — Anthropic API
-
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... .venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-### Option 2 — AWS Bedrock
-
-```bash
-AI_PROVIDER=bedrock \
 AWS_ACCESS_KEY_ID=... \
 AWS_SECRET_ACCESS_KEY=... \
 AWS_REGION=us-east-1 \
@@ -61,9 +52,7 @@ Drawers are labeled `Cabinet · Row · Column`, e.g. **1-B3** = Cabinet 1, Row B
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | Required when `AI_PROVIDER=anthropic` |
-| `AI_PROVIDER` | `anthropic` | `anthropic` or `bedrock` |
-| `AWS_ACCESS_KEY_ID` | — | Required for Bedrock |
-| `AWS_SECRET_ACCESS_KEY` | — | Required for Bedrock |
+| `AWS_ACCESS_KEY_ID` | — | AWS credential |
+| `AWS_SECRET_ACCESS_KEY` | — | AWS credential |
 | `AWS_REGION` | `us-east-1` | AWS region for Bedrock |
-| `BEDROCK_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Override default Bedrock model |
+| `BEDROCK_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Override default model |

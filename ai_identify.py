@@ -5,28 +5,17 @@ import re
 import anthropic
 
 # ---------------------------------------------------------------------------
-# Provider selection
-#   AI_PROVIDER=anthropic  (default) — uses ANTHROPIC_API_KEY
-#   AI_PROVIDER=bedrock             — uses AWS credentials + BEDROCK_MODEL_ID
-#
-# Bedrock env vars:
-#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (default us-east-1)
-#   BEDROCK_MODEL_ID  (default: us.anthropic.claude-haiku-4-5-20251001-v1:0)
+# AWS Bedrock — set AWS_REGION and BEDROCK_MODEL_ID as needed
 # ---------------------------------------------------------------------------
 
-_PROVIDER = os.environ.get("AI_PROVIDER", "anthropic").lower()
+client = anthropic.AnthropicBedrock(
+    aws_region=os.environ.get("AWS_REGION", "us-east-1"),
+)
 
-if _PROVIDER == "bedrock":
-    client = anthropic.AnthropicBedrock(
-        aws_region=os.environ.get("AWS_REGION", "us-east-1"),
-    )
-    _MODEL = os.environ.get(
-        "BEDROCK_MODEL_ID",
-        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    )
-else:
-    client = anthropic.Anthropic()
-    _MODEL = "claude-haiku-4-5-20251001"
+_MODEL = os.environ.get(
+    "BEDROCK_MODEL_ID",
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+)
 
 SYSTEM_PROMPT = """You are an expert LEGO part identifier. When given an image of a LEGO part, identify it and respond ONLY with a JSON object — no markdown, no explanation.
 

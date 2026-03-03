@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import database as db
-from ai_identify import identify_part, _PROVIDER, _MODEL
+from ai_identify import identify_part, _MODEL
 
 app = FastAPI(title="LEGO Sorting Catalog")
 
@@ -107,13 +107,7 @@ class PartUpdate(BaseModel):
 
 @app.get("/api/models")
 def list_models():
-    if _PROVIDER == "bedrock":
-        available = _get_models()
-    else:
-        available = [{"id": "claude-haiku-4-5-20251001",  "label": "Claude Haiku 4.5 (fast / cheap)"},
-                     {"id": "claude-sonnet-4-6",           "label": "Claude Sonnet 4.6"},
-                     {"id": "claude-opus-4-6",             "label": "Claude Opus 4.6 (most capable)"}]
-    return {"provider": _PROVIDER, "active": _active_model, "available": available}
+    return {"provider": "bedrock", "active": _active_model, "available": _get_models()}
 
 
 class SettingsUpdate(BaseModel):

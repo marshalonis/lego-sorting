@@ -312,10 +312,8 @@ async function assignPartToDrawer() {
     });
     if (!res.ok) throw new Error(await res.text());
     const part = await res.json();
-    closeModal();
-
-    // Refresh display
     const drawer = allDrawers.find(d => d.id === selectedDrawerId);
+    closeModal();
     document.getElementById('location-found').hidden = false;
     document.getElementById('location-text').textContent =
       `Cabinet ${drawer.cabinet} · ${drawer.row}${drawer.col}` + (drawer.label ? ` (${drawer.label})` : '');

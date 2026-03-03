@@ -207,6 +207,34 @@ html, body {
 .location-badge.new   { background: rgba(245,158,11,0.12); color: var(--warning); }
 .location-icon { font-size: 18px; }
 
+/* ── Brick Architect links ── */
+.ba-divider {
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+.ba-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ba-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+.ba-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+.ba-title:hover { text-decoration: underline; }
+.ba-downloads {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* ── Input ── */
 .input {
   width: 100%;

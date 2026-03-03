@@ -95,6 +95,18 @@ function showIdentifyResult(data) {
     editEl.hidden = true;
   }
 
+  // Brick Architect links
+  const baSection = document.getElementById('brickarchitect-section');
+  const partNum = ai.part_num || document.getElementById('manual-part-num').value.trim();
+  if (partNum) {
+    document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${encodeURIComponent(partNum)}`;
+    document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}.lbx`;
+    document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}-qr.lbx`;
+    baSection.hidden = false;
+  } else {
+    baSection.hidden = true;
+  }
+
   document.getElementById('identify-result').hidden = false;
 }
 
@@ -138,6 +150,11 @@ async function relookup() {
     }
     currentPart = part;
     if (currentAi) currentAi.part_num = partNum;
+    // Update Brick Architect links
+    document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${encodeURIComponent(partNum)}`;
+    document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}.lbx`;
+    document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}-qr.lbx`;
+    document.getElementById('brickarchitect-section').hidden = false;
   } catch (err) {
     alert('Error: ' + err.message);
   }

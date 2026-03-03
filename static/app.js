@@ -390,6 +390,7 @@ function openEditPartModal(part) {
 
 function buildEditPartHTML(part, locationStr) {
   return `
+    ${baImgHtml(part.part_num, 'lg')}
     <div style="margin-bottom:12px;">
       <label class="form-label">Part Number</label>
       <input type="text" class="input" value="${esc(part.part_num)}" disabled style="opacity:0.6">
@@ -500,6 +501,7 @@ function renderPartsList(parts) {
   }
   list.innerHTML = parts.map(p => `
     <div class="part-item" onclick="openEditPartModal(${JSON.stringify(p).replace(/"/g, '&quot;')})">
+      ${baImgHtml(p.part_num)}
       <div class="part-info">
         <div class="part-item-name">${esc(p.part_name)}</div>
         <div class="part-item-meta">#${esc(p.part_num)}${p.category ? ' · ' + esc(p.category) : ''}</div>
@@ -560,6 +562,7 @@ async function openDrawerDetail(drawerId) {
     ? '<p style="color:var(--text-muted);font-size:14px;">No parts in this drawer.</p>'
     : parts.map(p => `
         <div class="part-item" onclick="openEditPartModal(${JSON.stringify({...p, cabinet: d.cabinet, row: d.row, col: d.col, drawer_label: d.label}).replace(/"/g, '&quot;')})">
+          ${baImgHtml(p.part_num)}
           <div class="part-info">
             <div class="part-item-name">${esc(p.part_name)}</div>
             <div class="part-item-meta">#${esc(p.part_num)}${p.category ? ' · ' + esc(p.category) : ''}</div>
@@ -723,6 +726,13 @@ function closeModal() {
 /* ── Helpers ── */
 function drawerLabel(d) {
   return `${d.cabinet}-${d.row}${d.col}`;
+}
+
+function baImgHtml(partNum, size = 'sm') {
+  if (!partNum) return '';
+  const url = `https://brickarchitect.com/content/parts-large/${encodeURIComponent(partNum)}.png`;
+  const cls = size === 'lg' ? 'part-img-lg' : 'part-img-sm';
+  return `<img src="${url}" class="${cls}" alt="${esc(partNum)}" loading="lazy">`;
 }
 
 function esc(str) {

@@ -347,6 +347,27 @@ html, body {
 /* ── Search ── */
 .search-bar { margin-bottom: 12px; }
 
+/* ── Part images from Brick Architect ── */
+.part-img-sm {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  flex-shrink: 0;
+}
+.part-img-lg {
+  width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  display: block;
+  margin-bottom: 14px;
+}
+
 /* ── Part list item ── */
 .part-item {
   background: var(--surface);

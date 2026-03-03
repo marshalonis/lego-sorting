@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>LEGO Sorter</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Nav -->
+  <nav class="nav">
+    <button class="nav-btn active" data-view="identify">
+      <span class="nav-icon">📷</span>
+      <span>Identify</span>
+    </button>
+    <button class="nav-btn" data-view="browse">
+      <span class="nav-icon">🔍</span>
+      <span>Browse</span>
+    </button>
+    <button class="nav-btn" data-view="drawers">
+      <span class="nav-icon">🗄️</span>
+      <span>Drawers</span>
+    </button>
+    <button class="nav-btn" data-view="data">
+      <span class="nav-icon">💾</span>
+      <span>Data</span>
+    </button>
+  </nav>
+
+  <!-- View: Identify -->
+  <div id="view-identify" class="view active">
+    <div class="view-header">
+      <h1>Identify Part</h1>
+    </div>
+
+    <div class="upload-area" id="upload-area">
+      <input type="file" id="file-input" accept="image/*" capture="environment" hidden>
+      <div class="upload-prompt" id="upload-prompt">
+        <div class="upload-icon">📷</div>
+        <div class="upload-text">Tap to take photo or upload image</div>
+        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+          Choose Image
+        </button>
+      </div>
+      <div class="upload-preview" id="upload-preview" hidden>
+        <img id="preview-img" alt="Part preview">
+        <button class="btn btn-secondary btn-sm" onclick="resetIdentify()">Try Another</button>
+      </div>
+    </div>
+
+    <div id="identify-loading" class="loading-card" hidden>
+      <div class="spinner"></div>
+      <p>Identifying part...</p>
+    </div>
+
+    <div id="identify-result" hidden>
+      <div class="result-card">
+        <div class="result-header">
+          <div>
+            <div class="result-name" id="result-name"></div>
+            <div class="result-meta" id="result-meta"></div>
+          </div>
+          <div id="confidence-badge" class="confidence-badge"></div>
+        </div>
+        <div class="result-description" id="result-description"></div>
+
+        <div id="location-found" class="location-badge found" hidden>
+          <span class="location-icon">✅</span>
+          <span id="location-text"></span>
+        </div>
+        <div id="location-new" class="location-badge new" hidden>
+          <span class="location-icon">⚠️</span>
+          <span>Not yet cataloged</span>
+        </div>
+
+        <div id="assign-section" hidden>
+          <button class="btn btn-primary w-full" onclick="openDrawerPicker()">
+            Assign to Drawer
+          </button>
+        </div>
+
+        <div id="edit-section" hidden>
+          <button class="btn btn-secondary w-full" onclick="openEditForCurrent()">
+            Edit / Move Part
+          </button>
+        </div>
+      </div>
+
+      <!-- Part number edit -->
+      <div class="card mt-8">
+        <label class="form-label">Part Number (edit if AI was wrong)</label>
+        <div class="input-row">
+          <input type="text" id="manual-part-num" class="input" placeholder="e.g. 3001">
+          <button class="btn btn-secondary" onclick="relookup()">Look Up</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- View: Browse -->
+  <div id="view-browse" class="view" hidden>
+    <div class="view-header">
+      <h1>Browse Parts</h1>
+    </div>
+    <div class="search-bar">
+      <input type="search" id="search-input" class="input" placeholder="Search by name, number, category…" oninput="searchParts()">
+    </div>
+    <div id="parts-list" class="card-list"></div>
+  </div>
+
+  <!-- View: Drawers -->
+  <div id="view-drawers" class="view" hidden>
+    <div class="view-header">
+      <h1>Drawers</h1>
+      <button class="btn btn-primary btn-sm" onclick="openAddDrawer()">+ Add</button>
+    </div>
+    <div id="drawers-grid" class="drawers-grid"></div>
+  </div>
+
+  <!-- View: Data -->
+  <div id="view-data" class="view" hidden>
+    <div class="view-header">
+      <h1>Data</h1>
+    </div>
+
+    <div class="card">
+      <h2 class="card-title">AI Model</h2>
+      <p class="card-desc" id="model-provider-label">Loading…</p>
+      <select id="model-select" class="input" onchange="setModel(this.value)" style="margin-bottom:0"></select>
+    </div>
+
+    <div class="card mt-8">
+      <h2 class="card-title">Export</h2>
+      <p class="card-desc">Download your full catalog as a JSON file to save between sessions.</p>
+      <div id="export-stats" class="stats-row"></div>
+      <button class="btn btn-primary w-full" onclick="exportCatalog()">Export Catalog</button>
+    </div>
+
+    <div class="card mt-8">
+      <h2 class="card-title">Import</h2>
+      <p class="card-desc">Restore a previously exported catalog. Existing records are updated, new ones are added.</p>
+      <input type="file" id="import-file" accept=".json" hidden onchange="importCatalog(this)">
+      <button class="btn btn-secondary w-full" onclick="document.getElementById('import-file').click()">
+        Import Catalog
+      </button>
+      <div id="import-result" class="import-result" hidden></div>
+    </div>
+  </div>
+
+  <!-- Modal: Drawer Picker -->
+  <div id="modal-overlay" class="modal-overlay" hidden onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2 id="modal-title">Assign to Drawer</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Database
+lego.db
+
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Test images (generated locally)
+test-images/
+
+# Generated scripts
+generate_test_images.py
+
+# Environment files
+.env
+
+# OS
+.DS_Store

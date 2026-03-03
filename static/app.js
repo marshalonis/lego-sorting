@@ -99,9 +99,11 @@ function showIdentifyResult(data) {
   const baSection = document.getElementById('brickarchitect-section');
   const partNum = ai.part_num || document.getElementById('manual-part-num').value.trim();
   if (partNum) {
-    document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${encodeURIComponent(partNum)}`;
-    document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}.lbx`;
-    document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${encodeURIComponent(partNum)}-qr.lbx`;
+    const pn = encodeURIComponent(partNum);
+    document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${pn}`;
+    document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
+    document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
+    document.getElementById('ba-part-img').src = `https://brickarchitect.com/content/parts-large/${pn}.png`;
     baSection.hidden = false;
   } else {
     baSection.hidden = true;
@@ -158,6 +160,8 @@ async function relookup() {
     document.getElementById('lookup-name').textContent = data.name;
     document.getElementById('lookup-meta').textContent = metaParts.join(' · ');
     document.getElementById('lookup-ba-link').href = data.brickarchitect_url;
+    document.getElementById('lookup-img').src =
+      `https://brickarchitect.com/content/parts-large/${encodeURIComponent(data.part_num)}.png`;
     document.getElementById('lookup-result').hidden = false;
 
   } catch (err) {
@@ -194,11 +198,12 @@ function applyLookupResult() {
     currentPart = null;
   }
 
-  // Update Brick Architect links
+  // Update Brick Architect links + image
   const pn = encodeURIComponent(data.part_num);
   document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${pn}`;
   document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
   document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
+  document.getElementById('ba-part-img').src = `https://brickarchitect.com/content/parts-large/${pn}.png`;
   document.getElementById('brickarchitect-section').hidden = false;
 
   // Pre-fill drawer picker part name

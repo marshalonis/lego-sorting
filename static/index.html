@@ -87,6 +87,7 @@
 
         <div id="brickarchitect-section" hidden>
           <div class="ba-divider"></div>
+          <img id="ba-part-img" class="ba-part-img" src="" alt="Part image">
           <div class="ba-header">
             <img src="https://brickarchitect.com/favicon.ico" class="ba-icon" alt="">
             <a id="ba-link" href="#" target="_blank" class="ba-title">View on Brick Architect</a>
@@ -114,8 +115,13 @@
         </div>
         <div id="lookup-result" hidden>
           <div class="lookup-found" id="lookup-found-card">
-            <div class="lookup-name" id="lookup-name"></div>
-            <div class="lookup-meta" id="lookup-meta"></div>
+            <div class="lookup-body">
+              <img id="lookup-img" class="lookup-part-img" src="" alt="Part image">
+              <div>
+                <div class="lookup-name" id="lookup-name"></div>
+                <div class="lookup-meta" id="lookup-meta"></div>
+              </div>
+            </div>
             <div class="lookup-actions">
               <button class="btn btn-primary btn-sm" onclick="applyLookupResult()">Use This Part</button>
               <a id="lookup-ba-link" href="#" target="_blank" class="btn btn-secondary btn-sm">View on Brick Architect</a>

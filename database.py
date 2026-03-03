@@ -84,7 +84,7 @@ def get_drawer_by_location(conn, cabinet: int, row: str, col: int) -> Optional[d
 
 def list_drawers(conn) -> list[dict]:
     rows = conn.execute("""
-        SELECT d.*, COUNT(p.id) as part_count
+        SELECT d.*, COUNT(p.id) as part_count, MIN(p.part_num) as first_part_num
         FROM drawers d
         LEFT JOIN part_locations p ON p.drawer_id = d.id
         GROUP BY d.id

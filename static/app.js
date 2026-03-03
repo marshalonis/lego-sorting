@@ -644,26 +644,65 @@ function renderDrawersGrid() {
     return;
   }
 
-  // Group by cabinet
+  // Group existing drawers by cabinet
   const byCabinet = {};
   for (const d of allDrawers) {
     if (!byCabinet[d.cabinet]) byCabinet[d.cabinet] = [];
     byCabinet[d.cabinet].push(d);
   }
 
-  grid.innerHTML = Object.entries(byCabinet).map(([cab, drawers]) => `
-    <div class="cabinet-section">
+  grid.innerHTML = Object.entries(byCabinet).map(([cab, drawers]) => {
+    // Determine full grid dimensions for this cabinet
+    const maxCol = Math.max(...drawers.map(d => d.col));
+    const rows = [...new Set(drawers.map(d => d.row))].sort();
+
+    // Build lookup map of existing drawers
+    const existing = {};
+    for (const d of drawers) existing[`${d.row}${d.col}`] = d;
+
+    // Build complete row × col grid (filling virtual empty drawers)
+    const rowsHtml = rows.map(row => {
+      const tilesHtml = Array.from({length: maxCol}, (_, i) => {
+        const col = i + 1;
+        const d = existing[`${row}${col}`];
+
+        if (d) {
+          // Real drawer — red if occupied, green if empty
+          const occupied = d.part_count > 0;
+          const cls = occupied ? 'drawer-tile occupied' : 'drawer-tile empty';
+          const imgHtml = d.first_part_num
+            ? `<img src="https://brickarchitect.com/content/parts-large/${encodeURIComponent(d.first_part_num)}.png"
+                    class="drawer-tile-img" alt="" loading="lazy">`
+            : '';
+          const countLabel = occupied ? `${d.part_count} part${d.part_count !== 1 ? 's' : ''}` : 'Empty';
+          return `
+            <div class="${cls}" onclick="openDrawerDetail(${d.id})">
+              <div class="drawer-tile-id">${row}${col}</div>
+              ${imgHtml}
+              <div class="drawer-tile-count">${countLabel}</div>
+              ${d.label ? `<div class="drawer-tile-label">${esc(d.label)}</div>` : ''}
+            </div>`;
+        } else {
+          // Virtual drawer — shown as available (green)
+          return `
+            <div class="drawer-tile virtual" onclick="prefillAddDrawer('${cab}','${row}',${col})">
+              <div class="drawer-tile-id">${row}${col}</div>
+              <div class="drawer-tile-count">Available</div>
+            </div>`;
+        }
+      }).join('');
+
+      return `<div class="drawer-row-label-group">
+        <div class="drawer-row-label">Row ${row}</div>
+        <div class="drawer-grid-row">${tilesHtml}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="cabinet-section">
       <div class="cabinet-label">Cabinet ${cab}</div>
-      <div class="drawer-grid-row">
-        ${drawers.map(d => `
-          <div class="drawer-tile" onclick="openDrawerDetail(${d.id})">
-            <div class="drawer-tile-id">${d.row}${d.col}</div>
-            <div class="drawer-tile-count">${d.part_count} parts</div>
-            ${d.label ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${esc(d.label)}</div>` : ''}
-          </div>`).join('')}
-      </div>
-    </div>
-  `).join('');
+      ${rowsHtml}
+    </div>`;
+  }).join('');
 }
 
 async function openDrawerDetail(drawerId) {
@@ -689,21 +728,25 @@ async function openDrawerDetail(drawerId) {
   `);
 }
 
-function openAddDrawer() {
+function prefillAddDrawer(cabinet, row, col) {
+  openAddDrawer(cabinet, row, col);
+}
+
+function openAddDrawer(cabinet = '', row = '', col = '') {
   openModal('Add Drawer', `
     <div class="new-drawer-form">
       <div class="form-row">
         <div>
           <label class="form-label">Cabinet</label>
-          <input type="number" id="add-cab" class="input" value="1" min="1">
+          <input type="number" id="add-cab" class="input" value="${cabinet || 1}" min="1">
         </div>
         <div>
           <label class="form-label">Row</label>
-          <input type="text" id="add-row" class="input" value="A" maxlength="2">
+          <input type="text" id="add-row" class="input" value="${row || 'A'}" maxlength="2">
         </div>
         <div>
           <label class="form-label">Col</label>
-          <input type="number" id="add-col" class="input" value="1" min="1">
+          <input type="number" id="add-col" class="input" value="${col || 1}" min="1">
         </div>
       </div>
       <div>

@@ -38,6 +38,14 @@ def init_db():
                 UNIQUE(cabinet, row, col)
             );
 
+            CREATE TABLE IF NOT EXISTS parts_catalog (
+                part_num TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                part_cat_id INTEGER,
+                part_material TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_catalog_name ON parts_catalog(name);
+
             CREATE TABLE IF NOT EXISTS part_locations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 part_num TEXT NOT NULL UNIQUE,
@@ -153,6 +161,32 @@ def update_part(conn, part_num: str, **kwargs) -> Optional[dict]:
     values = list(updates.values()) + [part_num]
     conn.execute(f"UPDATE part_locations SET {fields} WHERE part_num=?", values)
     return get_part(conn, part_num)
+
+
+# --- Parts catalog ---
+
+def search_catalog(conn, query: str, limit: int = 20) -> list[dict]:
+    q = f"%{query}%"
+    rows = conn.execute(
+        """SELECT c.part_num, c.name, c.part_material,
+                  p.drawer_id, p.part_name as cataloged_name,
+                  d.cabinet, d.row, d.col
+           FROM parts_catalog c
+           LEFT JOIN part_locations p ON p.part_num = c.part_num
+           LEFT JOIN drawers d ON d.id = p.drawer_id
+           WHERE c.name LIKE ? OR c.part_num LIKE ?
+           ORDER BY
+             CASE WHEN c.name LIKE ? THEN 0 ELSE 1 END,
+             length(c.name)
+           LIMIT ?""",
+        (q, q, f"{query}%", limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def catalog_count(conn) -> int:
+    row = conn.execute("SELECT COUNT(*) FROM parts_catalog").fetchone()
+    return row[0] if row else 0
 
 
 # --- Import / Export ---

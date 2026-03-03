@@ -263,6 +263,46 @@ def get_drawer_parts(drawer_id: int):
     return {"drawer": drawer, "parts": parts}
 
 
+# ── Parts catalog (Rebrickable) ───────────────────────────────────────────────
+
+@app.get("/api/catalog/search")
+def catalog_search(q: str = ""):
+    if not q or len(q) < 2:
+        return []
+    with db.db() as conn:
+        return db.search_catalog(conn, q)
+
+
+@app.post("/api/catalog/load")
+async def catalog_load():
+    """Download parts.csv from Rebrickable and populate parts_catalog table."""
+    import csv, gzip, io, httpx
+    url = "https://cdn.rebrickable.com/media/downloads/parts.csv.gz"
+    async with httpx.AsyncClient(timeout=30) as http:
+        resp = await http.get(url)
+        resp.raise_for_status()
+
+    reader = csv.DictReader(io.TextIOWrapper(gzip.open(io.BytesIO(resp.content)), encoding="utf-8"))
+    rows = [(r["part_num"], r["name"], r.get("part_cat_id"), r.get("part_material")) for r in reader]
+
+    with db.db() as conn:
+        conn.execute("DELETE FROM parts_catalog")
+        conn.executemany(
+            "INSERT OR REPLACE INTO parts_catalog (part_num, name, part_cat_id, part_material) VALUES (?,?,?,?)",
+            rows,
+        )
+        count = db.catalog_count(conn)
+
+    return {"status": "ok", "parts_loaded": count}
+
+
+@app.get("/api/catalog/status")
+def catalog_status():
+    with db.db() as conn:
+        count = db.catalog_count(conn)
+    return {"parts_in_catalog": count}
+
+
 # ── Export / Import ───────────────────────────────────────────────────────────
 
 @app.get("/api/export")

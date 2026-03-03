@@ -48,6 +48,17 @@
       </div>
     </div>
 
+    <!-- Part name search -->
+    <div class="card" id="catalog-search-card">
+      <label class="form-label">Search by name</label>
+      <input type="search" id="catalog-search-input" class="input" placeholder="e.g. 1x2 plate, technic axle…" oninput="catalogSearch(this.value)">
+      <div id="catalog-search-results" class="catalog-results" hidden></div>
+      <div id="catalog-no-results" class="catalog-no-results" hidden>No parts found. Try different keywords.</div>
+      <div id="catalog-load-prompt" class="catalog-load-prompt" hidden>
+        Parts catalog not loaded. <button class="btn-link" onclick="loadCatalog()">Download now</button> (~1MB, one time).
+      </div>
+    </div>
+
     <div id="identify-loading" class="loading-card" hidden>
       <div class="spinner"></div>
       <p>Identifying part...</p>
@@ -182,6 +193,14 @@
         Import Catalog
       </button>
       <div id="import-result" class="import-result" hidden></div>
+    </div>
+
+    <div class="card mt-8">
+      <h2 class="card-title">Parts Catalog</h2>
+      <p class="card-desc">Download the full Rebrickable parts database (~60k parts) to enable name search on the Identify tab.</p>
+      <div id="catalog-stats" class="stats-row"></div>
+      <button class="btn btn-secondary w-full" id="catalog-load-btn" onclick="loadCatalog()">Download Parts Catalog</button>
+      <div id="catalog-load-result" class="import-result" hidden></div>
     </div>
   </div>
 

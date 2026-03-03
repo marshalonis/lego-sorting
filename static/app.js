@@ -12,11 +12,15 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById(viewId).hidden = false;
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    if (btn.dataset.view === 'identify') initCatalogSearch();
     if (btn.dataset.view === 'browse') loadBrowse();
     if (btn.dataset.view === 'drawers') loadDrawers();
     if (btn.dataset.view === 'data') loadDataStats();
   });
 });
+
+// Init on page load
+initCatalogSearch();
 
 /* ── View: Identify ── */
 document.getElementById('file-input').addEventListener('change', async (e) => {
@@ -476,6 +480,116 @@ async function deletePart(partNum) {
   }
 }
 
+/* ── Catalog search (Identify view) ── */
+let _catalogTimer = null;
+
+async function initCatalogSearch() {
+  const res = await fetch('/api/catalog/status');
+  const data = await res.json();
+  const prompt = document.getElementById('catalog-load-prompt');
+  if (data.parts_in_catalog === 0) {
+    prompt.hidden = false;
+  } else {
+    prompt.hidden = true;
+  }
+}
+
+function catalogSearch(val) {
+  clearTimeout(_catalogTimer);
+  const resultsEl = document.getElementById('catalog-search-results');
+  const noResultsEl = document.getElementById('catalog-no-results');
+  resultsEl.hidden = true;
+  noResultsEl.hidden = true;
+
+  if (!val || val.length < 2) return;
+
+  _catalogTimer = setTimeout(async () => {
+    const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(val)}`);
+    const results = await res.json();
+
+    if (results.length === 0) {
+      noResultsEl.hidden = false;
+      return;
+    }
+
+    resultsEl.innerHTML = results.map(r => {
+      const badge = r.drawer_id
+        ? `<span class="catalog-result-badge catalog-badge-cataloged">In Cabinet ${r.cabinet}·${r.row}${r.col}</span>`
+        : `<span class="catalog-result-badge catalog-badge-new">Not cataloged</span>`;
+      return `
+        <div class="catalog-result-item" onclick="selectCatalogResult('${esc(r.part_num)}', '${esc(r.name)}')">
+          ${baImgHtml(r.part_num)}
+          <div class="catalog-result-info">
+            <div class="catalog-result-name">${esc(r.name)}</div>
+            <div class="catalog-result-num">#${esc(r.part_num)}${r.part_material ? ' · ' + esc(r.part_material) : ''}</div>
+          </div>
+          ${badge}
+        </div>`;
+    }).join('');
+    resultsEl.hidden = false;
+  }, 300);
+}
+
+function selectCatalogResult(partNum, name) {
+  // Clear search
+  document.getElementById('catalog-search-input').value = '';
+  document.getElementById('catalog-search-results').hidden = true;
+  document.getElementById('catalog-no-results').hidden = true;
+
+  // Trigger the override lookup flow with the selected part number
+  document.getElementById('manual-part-num').value = partNum;
+
+  // If there's already an identify result showing, trigger a lookup
+  if (!document.getElementById('identify-result').hidden) {
+    relookup();
+  } else {
+    // No image yet — just pre-fill and show the lookup result inline
+    document.getElementById('identify-result').hidden = false;
+    document.getElementById('result-name').textContent = name;
+    document.getElementById('result-meta').textContent = `#${partNum}`;
+    document.getElementById('result-description').textContent = '';
+    document.getElementById('confidence-badge').className = 'confidence-badge';
+    document.getElementById('confidence-badge').textContent = '';
+    document.getElementById('location-found').hidden = true;
+    document.getElementById('location-new').hidden = true;
+    document.getElementById('assign-section').hidden = true;
+    document.getElementById('edit-section').hidden = true;
+    const pn = encodeURIComponent(partNum);
+    document.getElementById('ba-link').href = `https://brickarchitect.com/parts/${pn}`;
+    document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
+    document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
+    document.getElementById('ba-part-img').src = `https://brickarchitect.com/content/parts-large/${pn}.png`;
+    document.getElementById('brickarchitect-section').hidden = false;
+    relookup();
+  }
+}
+
+async function loadCatalog() {
+  const btn = document.getElementById('catalog-load-btn');
+  const resultEl = document.getElementById('catalog-load-result');
+  if (btn) { btn.disabled = true; btn.textContent = 'Downloading…'; }
+  if (resultEl) { resultEl.hidden = false; resultEl.className = 'import-result'; resultEl.textContent = 'Downloading from Rebrickable…'; }
+
+  try {
+    const res = await fetch('/api/catalog/load', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed');
+    if (resultEl) {
+      resultEl.className = 'import-result success';
+      resultEl.textContent = `Loaded ${data.parts_loaded.toLocaleString()} parts.`;
+    }
+    document.getElementById('catalog-load-prompt').hidden = true;
+    await loadDataStats();
+  } catch (err) {
+    if (resultEl) {
+      resultEl.className = 'import-result error';
+      resultEl.textContent = 'Error: ' + err.message;
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Download Parts Catalog'; }
+  }
+}
+
 /* ── View: Browse ── */
 let searchTimer = null;
 
@@ -630,17 +744,26 @@ async function submitAddDrawer() {
 
 /* ── View: Data ── */
 async function loadDataStats() {
-  const [partsRes, drawersRes] = await Promise.all([
+  const [partsRes, drawersRes, catalogRes] = await Promise.all([
     fetch('/api/parts'),
     fetch('/api/drawers'),
+    fetch('/api/catalog/status'),
   ]);
   const parts = await partsRes.json();
   const drawers = await drawersRes.json();
+  const catalog = await catalogRes.json();
 
   document.getElementById('export-stats').innerHTML = `
     <div class="stat-box"><div class="stat-num">${parts.length}</div><div class="stat-label">Parts</div></div>
     <div class="stat-box"><div class="stat-num">${drawers.length}</div><div class="stat-label">Drawers</div></div>
   `;
+
+  const catalogStatsEl = document.getElementById('catalog-stats');
+  if (catalogStatsEl) {
+    catalogStatsEl.innerHTML = catalog.parts_in_catalog > 0
+      ? `<div class="stat-box"><div class="stat-num">${catalog.parts_in_catalog.toLocaleString()}</div><div class="stat-label">Parts in catalog</div></div>`
+      : '';
+  }
 
   await loadModelSelector();
 }

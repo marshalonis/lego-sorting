@@ -347,6 +347,45 @@ html, body {
 /* ── Search ── */
 .search-bar { margin-bottom: 12px; }
 
+/* ── Catalog search ── */
+.catalog-results {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.catalog-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.catalog-result-item:hover { border-color: var(--primary); }
+.catalog-result-info { flex: 1; min-width: 0; }
+.catalog-result-name { font-size: 14px; font-weight: 600; }
+.catalog-result-num { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.catalog-result-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.catalog-badge-cataloged { background: rgba(34,197,94,0.15); color: var(--success); }
+.catalog-badge-new { background: rgba(245,158,11,0.12); color: var(--warning); }
+.catalog-no-results { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
+.catalog-load-prompt { margin-top: 8px; font-size: 13px; color: var(--text-muted); }
+.btn-link {
+  background: none; border: none; color: var(--primary);
+  font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; text-decoration: underline;
+}
+
 /* ── Part images from Brick Architect ── */
 .part-img-sm {
   width: 48px;

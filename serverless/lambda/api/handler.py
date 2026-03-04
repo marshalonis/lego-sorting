@@ -6,7 +6,7 @@ from datetime import date
 from typing import Optional
 
 import boto3
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from mangum import Mangum
 from pydantic import BaseModel
@@ -340,11 +340,10 @@ def export_catalog():
 
 
 @app.post("/api/import")
-async def import_catalog(file: UploadFile = File(...)):
-    content = await file.read()
+async def import_catalog(request: Request):
     try:
-        data = json.loads(content)
-    except json.JSONDecodeError as e:
+        data = await request.json()
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
 
     if not isinstance(data, dict) or "parts" not in data:

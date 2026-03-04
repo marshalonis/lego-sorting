@@ -1031,16 +1031,19 @@ async function importCatalog(input) {
   const file = input.files[0];
   if (!file) return;
 
-  const form = new FormData();
-  form.append('file', file);
-
   const resultEl = document.getElementById('import-result');
   resultEl.hidden = false;
   resultEl.className = 'import-result';
   resultEl.textContent = 'Importing…';
 
   try {
-    const res = await apiFetch('/api/import', { method: 'POST', body: form });
+    // Read the JSON file as text and POST directly — avoids multipart issues with API Gateway
+    const text = await file.text();
+    const res = await apiFetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: text,
+    });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
     resultEl.className = 'import-result success';

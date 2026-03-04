@@ -110,6 +110,9 @@
             <a id="ba-lbx-qr" href="#" class="btn btn-secondary btn-sm" download>
               QR Code Label (.lbx)
             </a>
+            <a id="stl-link" href="#" class="btn btn-secondary btn-sm" target="_blank" rel="noopener">
+              Find STL (3D Print)
+            </a>
           </div>
         </div>
       </div>
@@ -196,6 +199,11 @@
     </div>
 
     <div class="card mt-8">
+      <h2 class="card-title">Account</h2>
+      <button class="btn btn-secondary w-full" onclick="logout()">Sign Out</button>
+    </div>
+
+    <div class="card mt-8">
       <h2 class="card-title">Parts Catalog</h2>
       <p class="card-desc">Download the full Rebrickable parts database (~60k parts) to enable name search on the Identify tab.</p>
       <div id="catalog-stats" class="stats-row"></div>
@@ -212,6 +220,31 @@
         <button class="modal-close" onclick="closeModal()">✕</button>
       </div>
       <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Login overlay -->
+  <div id="login-overlay" class="login-overlay" hidden>
+    <div class="login-card">
+      <div class="login-logo">🧱</div>
+      <h1 class="login-title">LEGO Sorter</h1>
+
+      <div id="login-form">
+        <input type="email" id="login-email" class="input" placeholder="Email" autocomplete="email">
+        <input type="password" id="login-password" class="input" placeholder="Password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') submitLogin()">
+        <button class="btn btn-primary w-full" onclick="submitLogin()">Sign In</button>
+        <div id="login-error" class="login-error" hidden></div>
+      </div>
+
+      <div id="new-password-form" hidden>
+        <p class="login-hint">First login — please set a new password.</p>
+        <input type="password" id="new-password" class="input" placeholder="New password">
+        <input type="password" id="new-password-confirm" class="input" placeholder="Confirm new password"
+               onkeydown="if(event.key==='Enter') submitNewPassword()">
+        <button class="btn btn-primary w-full" onclick="submitNewPassword()">Set Password</button>
+        <div id="new-password-error" class="login-error" hidden></div>
+      </div>
     </div>
   </div>
 

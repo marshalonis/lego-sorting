@@ -602,3 +602,57 @@ html, body {
 
 .new-drawer-form { display: flex; flex-direction: column; gap: 10px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+/* ── Login overlay ── */
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-logo {
+  font-size: 48px;
+  text-align: center;
+}
+
+.login-title {
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.login-hint {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+#login-form, #new-password-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-error {
+  font-size: 13px;
+  color: var(--danger);
+  text-align: center;
+  padding: 8px;
+  background: rgba(239,68,68,0.1);
+  border-radius: var(--radius-sm);
+}

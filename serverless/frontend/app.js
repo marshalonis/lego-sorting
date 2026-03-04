@@ -1,3 +1,164 @@
+/* ── Auth ── */
+let _cognitoConfig = null;
+let _challengeSession = null;
+
+async function initAuth() {
+  const res = await fetch('/api/config');
+  _cognitoConfig = await res.json();
+
+  if (localStorage.getItem('access_token')) {
+    const ok = await _validateToken();
+    if (ok) { showApp(); return; }
+  }
+  document.getElementById('login-overlay').hidden = false;
+}
+
+async function _validateToken() {
+  try {
+    const res = await apiFetch('/api/catalog/status');
+    if (res.ok) return true;
+  } catch {}
+  return tryRefreshToken();
+}
+
+async function tryRefreshToken() {
+  const rt = localStorage.getItem('refresh_token');
+  if (!rt || !_cognitoConfig) return false;
+  try {
+    const data = await _cognitoCall('InitiateAuth', {
+      AuthFlow: 'REFRESH_TOKEN_AUTH',
+      AuthParameters: { REFRESH_TOKEN: rt },
+      ClientId: _cognitoConfig.client_id,
+    });
+    if (data.AuthenticationResult?.AccessToken) {
+      localStorage.setItem('access_token', data.AuthenticationResult.AccessToken);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function showApp() {
+  document.getElementById('login-overlay').hidden = true;
+  initCatalogSearch();
+}
+
+async function _cognitoCall(target, body) {
+  const res = await fetch(
+    `https://cognito-idp.${_cognitoConfig.region}.amazonaws.com/`,
+    {
+      method: 'POST',
+      headers: {
+        'X-Amz-Target': `AWSCognitoIdentityProviderService.${target}`,
+        'Content-Type': 'application/x-amz-json-1.1',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.json();
+}
+
+async function submitLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-error');
+  errorEl.hidden = true;
+
+  try {
+    const data = await _cognitoCall('InitiateAuth', {
+      AuthFlow: 'USER_PASSWORD_AUTH',
+      AuthParameters: { USERNAME: email, PASSWORD: password },
+      ClientId: _cognitoConfig.client_id,
+    });
+
+    if (data.ChallengeName === 'NEW_PASSWORD_REQUIRED') {
+      _challengeSession = { session: data.Session, email };
+      document.getElementById('login-form').hidden = true;
+      document.getElementById('new-password-form').hidden = false;
+      return;
+    }
+
+    if (data.AuthenticationResult) {
+      _storeTokens(data.AuthenticationResult);
+      showApp();
+      return;
+    }
+
+    errorEl.textContent = data.message || 'Login failed';
+    errorEl.hidden = false;
+  } catch (err) {
+    errorEl.textContent = 'Login error: ' + err.message;
+    errorEl.hidden = false;
+  }
+}
+
+async function submitNewPassword() {
+  const newPw = document.getElementById('new-password').value;
+  const confirm = document.getElementById('new-password-confirm').value;
+  const errorEl = document.getElementById('new-password-error');
+  errorEl.hidden = true;
+
+  if (newPw !== confirm) {
+    errorEl.textContent = 'Passwords do not match';
+    errorEl.hidden = false;
+    return;
+  }
+
+  try {
+    const data = await _cognitoCall('RespondToAuthChallenge', {
+      ChallengeName: 'NEW_PASSWORD_REQUIRED',
+      ClientId: _cognitoConfig.client_id,
+      Session: _challengeSession.session,
+      ChallengeResponses: {
+        USERNAME: _challengeSession.email,
+        NEW_PASSWORD: newPw,
+      },
+    });
+
+    if (data.AuthenticationResult) {
+      _storeTokens(data.AuthenticationResult);
+      showApp();
+      return;
+    }
+
+    errorEl.textContent = data.message || 'Failed to set new password';
+    errorEl.hidden = false;
+  } catch (err) {
+    errorEl.textContent = 'Error: ' + err.message;
+    errorEl.hidden = false;
+  }
+}
+
+function _storeTokens(result) {
+  localStorage.setItem('access_token', result.AccessToken);
+  if (result.RefreshToken) localStorage.setItem('refresh_token', result.RefreshToken);
+}
+
+function logout() {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  document.getElementById('login-overlay').hidden = false;
+}
+
+async function apiFetch(url, options = {}) {
+  const token = localStorage.getItem('access_token');
+  const headers = { ...(options.headers || {}), Authorization: `Bearer ${token}` };
+  let res = await fetch(url, { ...options, headers });
+
+  if (res.status === 401) {
+    if (await tryRefreshToken()) {
+      headers.Authorization = `Bearer ${localStorage.getItem('access_token')}`;
+      res = await fetch(url, { ...options, headers });
+    } else {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      document.getElementById('login-overlay').hidden = false;
+      throw new Error('Session expired. Please log in again.');
+    }
+  }
+  return res;
+}
+
 /* ── State ── */
 let currentAi = null;      // Last AI identification result
 let currentPart = null;    // Existing part record (if found)
@@ -20,7 +181,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 });
 
 // Init on page load
-initCatalogSearch();
+initAuth();
 
 /* ── View: Identify ── */
 document.getElementById('file-input').addEventListener('change', async (e) => {
@@ -47,7 +208,7 @@ async function identifyImage(file) {
 
   try {
     // 1. Get presigned S3 upload URL
-    const uploadRes = await fetch('/api/images/upload', {
+    const uploadRes = await apiFetch('/api/images/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content_type: file.type || 'image/jpeg' }),
@@ -55,7 +216,7 @@ async function identifyImage(file) {
     if (!uploadRes.ok) throw new Error('Failed to get upload URL');
     const { upload_url, s3_key } = await uploadRes.json();
 
-    // 2. Upload image directly to S3
+    // 2. Upload image directly to S3 (presigned URL — no auth header)
     const s3Res = await fetch(upload_url, {
       method: 'PUT',
       headers: { 'Content-Type': file.type || 'image/jpeg' },
@@ -64,7 +225,7 @@ async function identifyImage(file) {
     if (!s3Res.ok) throw new Error('Failed to upload image to S3');
 
     // 3. Identify from S3 key
-    const res = await fetch('/api/identify', {
+    const res = await apiFetch('/api/identify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ s3_key }),
@@ -127,6 +288,7 @@ function showIdentifyResult(data) {
     document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
     document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
     document.getElementById('ba-part-img').src = `https://brickarchitect.com/content/parts-large/${pn}.png`;
+    document.getElementById('stl-link').href = `https://www.printables.com/search/models?q=lego+${pn}`;
     baSection.hidden = false;
   } else {
     baSection.hidden = true;
@@ -161,7 +323,7 @@ async function relookup() {
   document.getElementById('lookup-loading').hidden = false;
 
   try {
-    const res = await fetch(`/api/lookup/${encodeURIComponent(partNum)}`);
+    const res = await apiFetch(`/api/lookup/${encodeURIComponent(partNum)}`);
     const data = await res.json();
     document.getElementById('lookup-loading').hidden = true;
 
@@ -223,6 +385,7 @@ function applyLookupResult() {
   document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
   document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
   document.getElementById('ba-part-img').src = `https://brickarchitect.com/content/parts-large/${pn}.png`;
+  document.getElementById('stl-link').href = `https://www.printables.com/search/models?q=lego+${pn}`;
   document.getElementById('brickarchitect-section').hidden = false;
 
   clearLookupResult();
@@ -323,7 +486,7 @@ async function createAndSelectDrawer() {
   if (!cabinet || !row || !col) { alert('Fill in Cabinet, Row, and Column.'); return; }
 
   try {
-    const res = await fetch('/api/drawers', {
+    const res = await apiFetch('/api/drawers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cabinet, row, col, label }),
@@ -375,7 +538,7 @@ async function assignPartToDrawer() {
   };
 
   try {
-    const res = await fetch('/api/parts', {
+    const res = await apiFetch('/api/parts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -466,7 +629,7 @@ async function savePartEdit() {
   if (editDrawerId !== null) body.drawer_id = editDrawerId;
 
   try {
-    const res = await fetch(`/api/parts/${encodeURIComponent(editingPartNum)}`, {
+    const res = await apiFetch(`/api/parts/${encodeURIComponent(editingPartNum)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -482,7 +645,7 @@ async function savePartEdit() {
 async function deletePart(partNum) {
   if (!confirm(`Delete part ${partNum}? This cannot be undone.`)) return;
   try {
-    await fetch(`/api/parts/${encodeURIComponent(partNum)}`, {
+    await apiFetch(`/api/parts/${encodeURIComponent(partNum)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ drawer_id: null }),
@@ -498,7 +661,7 @@ async function deletePart(partNum) {
 let _catalogTimer = null;
 
 async function initCatalogSearch() {
-  const res = await fetch('/api/catalog/status');
+  const res = await apiFetch('/api/catalog/status');
   const data = await res.json();
   const prompt = document.getElementById('catalog-load-prompt');
   if (data.parts_in_catalog === 0) {
@@ -518,7 +681,7 @@ function catalogSearch(val) {
   if (!val || val.length < 2) return;
 
   _catalogTimer = setTimeout(async () => {
-    const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(val)}`);
+    const res = await apiFetch(`/api/catalog/search?q=${encodeURIComponent(val)}`);
     const results = await res.json();
 
     if (results.length === 0) {
@@ -569,6 +732,7 @@ function selectCatalogResult(partNum, name) {
     document.getElementById('ba-lbx').href = `https://brickarchitect.com/label/${pn}.lbx`;
     document.getElementById('ba-lbx-qr').href = `https://brickarchitect.com/label/${pn}-qr.lbx`;
     document.getElementById('ba-part-img').src = `https://brickarchitect.com/content/parts-large/${pn}.png`;
+    document.getElementById('stl-link').href = `https://www.printables.com/search/models?q=lego+${pn}`;
     document.getElementById('brickarchitect-section').hidden = false;
     relookup();
   }
@@ -581,7 +745,7 @@ async function loadCatalog() {
   if (resultEl) { resultEl.hidden = false; resultEl.className = 'import-result'; resultEl.textContent = 'Downloading from Rebrickable…'; }
 
   try {
-    const res = await fetch('/api/catalog/load', { method: 'POST' });
+    const res = await apiFetch('/api/catalog/load', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed');
     if (resultEl) {
@@ -611,7 +775,7 @@ async function searchParts() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(async () => {
     const q = document.getElementById('search-input').value.trim();
-    const res = await fetch('/api/parts?q=' + encodeURIComponent(q));
+    const res = await apiFetch('/api/parts?q=' + encodeURIComponent(q));
     const parts = await res.json();
     renderPartsList(parts);
   }, 250);
@@ -642,7 +806,7 @@ async function loadDrawers() {
 }
 
 async function fetchDrawers() {
-  const res = await fetch('/api/drawers');
+  const res = await apiFetch('/api/drawers');
   allDrawers = await res.json();
 }
 
@@ -712,7 +876,7 @@ function renderDrawersGrid() {
 }
 
 async function openDrawerDetail(drawerId) {
-  const res = await fetch(`/api/drawers/${drawerId}/parts`);
+  const res = await apiFetch(`/api/drawers/${drawerId}/parts`);
   const data = await res.json();
   const d = data.drawer;
   const parts = data.parts;
@@ -778,7 +942,7 @@ async function submitAddDrawer() {
   if (!cabinet || !row || !col) { alert('Fill in all required fields.'); return; }
 
   try {
-    const res = await fetch('/api/drawers', {
+    const res = await apiFetch('/api/drawers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cabinet, row, col, label, notes }),
@@ -794,9 +958,9 @@ async function submitAddDrawer() {
 /* ── View: Data ── */
 async function loadDataStats() {
   const [partsRes, drawersRes, catalogRes] = await Promise.all([
-    fetch('/api/parts'),
-    fetch('/api/drawers'),
-    fetch('/api/catalog/status'),
+    apiFetch('/api/parts'),
+    apiFetch('/api/drawers'),
+    apiFetch('/api/catalog/status'),
   ]);
   const parts = await partsRes.json();
   const drawers = await drawersRes.json();
@@ -819,7 +983,7 @@ async function loadDataStats() {
 
 async function loadModelSelector() {
   try {
-    const res = await fetch('/api/models');
+    const res = await apiFetch('/api/models');
     const data = await res.json();
 
     const providerLabel = data.provider === 'bedrock' ? 'AWS Bedrock' : 'Anthropic API';
@@ -836,7 +1000,7 @@ async function loadModelSelector() {
 
 async function setModel(modelId) {
   try {
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_id: modelId }),
@@ -847,8 +1011,20 @@ async function setModel(modelId) {
   }
 }
 
-function exportCatalog() {
-  window.location.href = '/api/export';
+async function exportCatalog() {
+  try {
+    const res = await apiFetch('/api/export');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `lego-catalog-${today}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert('Export failed: ' + err.message);
+  }
 }
 
 async function importCatalog(input) {
@@ -864,7 +1040,7 @@ async function importCatalog(input) {
   resultEl.textContent = 'Importing…';
 
   try {
-    const res = await fetch('/api/import', { method: 'POST', body: form });
+    const res = await apiFetch('/api/import', { method: 'POST', body: form });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
     resultEl.className = 'import-result success';

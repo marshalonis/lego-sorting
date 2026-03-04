@@ -17,6 +17,8 @@ from ai_identify import identify_part, _MODEL
 app = FastAPI(title="LEGO Sorting Catalog")
 
 IMAGES_BUCKET = os.environ.get("IMAGES_BUCKET", "")
+COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
+COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID", "")
 _region = os.environ.get("AWS_REGION", "us-east-1")
 _s3 = boto3.client("s3", region_name=_region)
 
@@ -106,6 +108,18 @@ class UploadRequest(BaseModel):
 
 class IdentifyRequest(BaseModel):
     s3_key: str
+
+
+# ── Config (unauthenticated) ──────────────────────────────────────────────────
+
+@app.get("/api/config")
+def get_config():
+    """Returns Cognito config needed by the frontend login form. No auth required."""
+    return {
+        "user_pool_id": COGNITO_USER_POOL_ID,
+        "client_id": COGNITO_CLIENT_ID,
+        "region": _region,
+    }
 
 
 # ── Models / Settings ─────────────────────────────────────────────────────────

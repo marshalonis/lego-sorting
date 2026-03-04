@@ -3,18 +3,25 @@ from aws_cdk import (
     Duration,
     RemovalPolicy,
     CfnOutput,
+    BundlingOptions,
     aws_dynamodb as dynamodb,
     aws_s3 as s3,
     aws_s3_deployment as s3_deploy,
     aws_lambda as lambda_,
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as integrations,
+    aws_apigatewayv2_authorizers as apigwv2_auth,
     aws_cloudfront as cloudfront,
     aws_cloudfront_origins as origins,
     aws_iam as iam,
+    aws_certificatemanager as acm,
+    aws_cognito as cognito,
 )
 from constructs import Construct
 import os
+
+DOMAIN_NAME = "bootiak.org"
+CERTIFICATE_ARN = "arn:aws:acm:us-east-1:535002893187:certificate/eb45b684-8ef9-4664-963c-173c91170cc9"
 
 
 class LegoSortingStack(Stack):
@@ -47,6 +54,27 @@ class LegoSortingStack(Stack):
         parts_table.add_global_secondary_index(
             index_name="drawer-index",
             partition_key=dynamodb.Attribute(name="drawer_id", type=dynamodb.AttributeType.STRING),
+        )
+
+        # ── Cognito ──────────────────────────────────────────────────────────
+
+        user_pool = cognito.UserPool(
+            self, "UserPool",
+            self_sign_up_enabled=False,
+            sign_in_aliases=cognito.SignInAliases(email=True, username=False),
+            removal_policy=RemovalPolicy.DESTROY,
+        )
+
+        user_pool_client = user_pool.add_client(
+            "AppClient",
+            auth_flows=cognito.AuthFlow(user_password=True),
+            generate_secret=False,
+        )
+
+        jwt_authorizer = apigwv2_auth.HttpUserPoolAuthorizer(
+            "CognitoAuthorizer",
+            user_pool,
+            user_pool_clients=[user_pool_client],
         )
 
         # ── S3 Buckets ───────────────────────────────────────────────────────
@@ -112,8 +140,9 @@ class LegoSortingStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             code=lambda_.Code.from_asset(
                 os.path.join(os.path.dirname(__file__), "../../lambda/api"),
-                bundling=lambda_.BundlingOptions(
+                bundling=BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    platform="linux/amd64",
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output",
@@ -129,7 +158,8 @@ class LegoSortingStack(Stack):
                 "PARTS_TABLE": parts_table.table_name,
                 "IMAGES_BUCKET": images_bucket.bucket_name,
                 "CATALOG_BUCKET": catalog_bucket.bucket_name,
-                "AWS_ACCOUNT_REGION": self.region,
+                "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
+                "COGNITO_CLIENT_ID": user_pool_client.user_pool_client_id,
             },
         )
 
@@ -139,8 +169,9 @@ class LegoSortingStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             code=lambda_.Code.from_asset(
                 os.path.join(os.path.dirname(__file__), "../../lambda/catalog_loader"),
-                bundling=lambda_.BundlingOptions(
+                bundling=BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
+                    platform="linux/amd64",
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output",
@@ -172,10 +203,19 @@ class LegoSortingStack(Stack):
             "ApiIntegration", api_lambda,
         )
 
+        # Unauthenticated — returns Cognito config needed for login
+        http_api.add_routes(
+            path="/api/config",
+            methods=[apigwv2.HttpMethod.GET],
+            integration=lambda_integration,
+        )
+
+        # All other routes require a valid Cognito JWT
         http_api.add_routes(
             path="/{proxy+}",
             methods=[apigwv2.HttpMethod.ANY],
             integration=lambda_integration,
+            authorizer=jwt_authorizer,
         )
 
         # ── CloudFront ────────────────────────────────────────────────────────
@@ -188,8 +228,12 @@ class LegoSortingStack(Stack):
             f"{http_api.http_api_id}.execute-api.{self.region}.amazonaws.com",
         )
 
+        certificate = acm.Certificate.from_certificate_arn(self, "Cert", CERTIFICATE_ARN)
+
         distribution = cloudfront.Distribution(
             self, "Distribution",
+            domain_names=[DOMAIN_NAME],
+            certificate=certificate,
             default_behavior=cloudfront.BehaviorOptions(
                 origin=origins.S3BucketOrigin.with_origin_access_control(
                     ui_bucket, origin_access_control=oac,
@@ -242,8 +286,12 @@ class LegoSortingStack(Stack):
         # ── Outputs ──────────────────────────────────────────────────────────
 
         CfnOutput(self, "AppUrl",
-            value=f"https://{distribution.domain_name}",
+            value=f"https://{DOMAIN_NAME}",
             description="LEGO Sorting App URL",
+        )
+        CfnOutput(self, "CloudFrontDomain",
+            value=distribution.domain_name,
+            description="Point your DNS CNAME/ALIAS to this CloudFront domain",
         )
         CfnOutput(self, "ApiUrl",
             value=http_api.url,
@@ -256,4 +304,12 @@ class LegoSortingStack(Stack):
         CfnOutput(self, "CatalogLoaderFunctionName",
             value=catalog_loader_lambda.function_name,
             description="Invoke this Lambda once to load the Rebrickable parts catalog",
+        )
+        CfnOutput(self, "UserPoolId",
+            value=user_pool.user_pool_id,
+            description="Cognito User Pool ID — create your user here in the AWS Console",
+        )
+        CfnOutput(self, "UserPoolClientId",
+            value=user_pool_client.user_pool_client_id,
+            description="Cognito App Client ID",
         )

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import aws_cdk as cdk
 from stacks.lego_stack import LegoSortingStack
 
@@ -8,8 +9,8 @@ LegoSortingStack(
     app,
     "LegoSortingStack",
     env=cdk.Environment(
-        account=app.node.try_get_context("account"),
-        region=app.node.try_get_context("region") or "us-east-1",
+        account=os.environ["CDK_DEFAULT_ACCOUNT"],
+        region="us-east-1",
     ),
 )
 

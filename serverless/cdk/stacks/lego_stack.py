@@ -5,6 +5,7 @@ from aws_cdk import (
     CfnOutput,
     BundlingOptions,
     ILocalBundling,
+    AssetHashType,
     aws_dynamodb as dynamodb,
     aws_s3 as s3,
     aws_s3_deployment as s3_deploy,
@@ -37,7 +38,12 @@ class LocalPipBundler:
         try:
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", "-r", "requirements.txt",
-                 "-t", output_dir, "-q"],
+                 "-t", output_dir, "-q",
+                 "--platform", "manylinux2014_x86_64",
+                 "--implementation", "cp",
+                 "--python-version", "3.12",
+                 "--only-binary=:all:",
+                 "--upgrade"],
                 cwd=self._source_dir,
                 check=True,
             )
@@ -176,6 +182,7 @@ class LegoSortingStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             code=lambda_.Code.from_asset(
                 _api_src,
+                asset_hash_type=AssetHashType.OUTPUT,
                 bundling=BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     local=LocalPipBundler(_api_src),
@@ -206,6 +213,7 @@ class LegoSortingStack(Stack):
             runtime=lambda_.Runtime.PYTHON_3_12,
             code=lambda_.Code.from_asset(
                 _catalog_src,
+                asset_hash_type=AssetHashType.OUTPUT,
                 bundling=BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
                     local=LocalPipBundler(_catalog_src),

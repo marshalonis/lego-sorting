@@ -326,16 +326,26 @@ def export_all() -> dict:
 
 
 def import_data(data: dict):
+    # Build old_id → new_uuid mapping so parts can be linked to their drawers.
+    # Old SQLite exports use integer drawer IDs; DynamoDB uses UUIDs.
+    drawer_id_map: dict = {}
     for d in data.get("drawers", []):
-        create_drawer(
+        new_drawer = create_drawer(
             d["cabinet"], d["row"], d["col"],
             label=d.get("label"), notes=d.get("notes"),
         )
+        old_id = d.get("id")
+        if old_id is not None:
+            drawer_id_map[str(old_id)] = new_drawer["id"]
+
     for p in data.get("parts", []):
+        old_drawer_id = p.get("drawer_id")
+        # Map old integer ID to new UUID, or use as-is if already a UUID string
+        new_drawer_id = drawer_id_map.get(str(old_drawer_id), old_drawer_id) if old_drawer_id is not None else None
         upsert_part(
             p["part_num"], p["part_name"],
             category=p.get("category"),
-            drawer_id=p.get("drawer_id"),
+            drawer_id=new_drawer_id,
             notes=p.get("notes"),
             ai_description=p.get("ai_description"),
         )

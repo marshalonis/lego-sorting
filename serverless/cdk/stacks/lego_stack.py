@@ -4,6 +4,7 @@ from aws_cdk import (
     RemovalPolicy,
     CfnOutput,
     BundlingOptions,
+    ILocalBundling,
     aws_dynamodb as dynamodb,
     aws_s3 as s3,
     aws_s3_deployment as s3_deploy,
@@ -18,7 +19,41 @@ from aws_cdk import (
     aws_cognito as cognito,
 )
 from constructs import Construct
+import jsii
 import os
+import shutil
+import subprocess
+import sys
+
+
+@jsii.implements(ILocalBundling)
+class LocalPipBundler:
+    """Bundles a Python Lambda using local pip — no Docker required."""
+
+    def __init__(self, source_dir: str):
+        self._source_dir = source_dir
+
+    def try_bundle(self, output_dir: str, *, image, **kwargs) -> bool:
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-r", "requirements.txt",
+                 "-t", output_dir, "-q"],
+                cwd=self._source_dir,
+                check=True,
+            )
+            for item in os.listdir(self._source_dir):
+                if item in ("__pycache__", "cdk.out"):
+                    continue
+                src = os.path.join(self._source_dir, item)
+                dst = os.path.join(output_dir, item)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src, dst)
+            return True
+        except Exception as e:
+            print(f"Local bundling failed: {e}")
+            return False
 
 DOMAIN_NAME = "bootiak.org"
 CERTIFICATE_ARN = "arn:aws:acm:us-east-1:535002893187:certificate/eb45b684-8ef9-4664-963c-173c91170cc9"
@@ -135,14 +170,15 @@ class LegoSortingStack(Stack):
         images_bucket.grant_read_write(lambda_role)
         catalog_bucket.grant_read_write(lambda_role)
 
+        _api_src = os.path.join(os.path.dirname(__file__), "../../lambda/api")
         api_lambda = lambda_.Function(
             self, "ApiLambda",
             runtime=lambda_.Runtime.PYTHON_3_12,
             code=lambda_.Code.from_asset(
-                os.path.join(os.path.dirname(__file__), "../../lambda/api"),
+                _api_src,
                 bundling=BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    platform="linux/amd64",
+                    local=LocalPipBundler(_api_src),
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output",
@@ -164,14 +200,15 @@ class LegoSortingStack(Stack):
         )
 
         # Catalog loader — separate Lambda for one-time Rebrickable download
+        _catalog_src = os.path.join(os.path.dirname(__file__), "../../lambda/catalog_loader")
         catalog_loader_lambda = lambda_.Function(
             self, "CatalogLoaderLambda",
             runtime=lambda_.Runtime.PYTHON_3_12,
             code=lambda_.Code.from_asset(
-                os.path.join(os.path.dirname(__file__), "../../lambda/catalog_loader"),
+                _catalog_src,
                 bundling=BundlingOptions(
                     image=lambda_.Runtime.PYTHON_3_12.bundling_image,
-                    platform="linux/amd64",
+                    local=LocalPipBundler(_catalog_src),
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -r . /asset-output",

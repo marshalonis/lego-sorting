@@ -32,8 +32,20 @@ _CACHE_TTL = 300
 _FALLBACK_MODELS = [
     {"id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",  "label": "Claude Haiku 4.5 (fast / cheap)"},
     {"id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "label": "Claude Sonnet 4.5"},
-    {"id": "us.anthropic.claude-opus-4-5-20251001-v1:0",   "label": "Claude Opus 4.5 (most capable)"},
+    {"id": "anthropic.claude-3-haiku-20240307-v1:0",       "label": "Claude 3 Haiku"},
 ]
+
+
+# Models known to support image (vision) input on Bedrock
+_VISION_MODEL_PATTERNS = [
+    "claude-3-haiku", "claude-3-sonnet", "claude-3-opus",
+    "claude-3-5-sonnet", "claude-haiku-4", "claude-sonnet-4", "claude-opus-4",
+]
+
+
+def _supports_vision(model_id: str) -> bool:
+    mid = model_id.lower()
+    return any(p in mid for p in _VISION_MODEL_PATTERNS)
 
 
 def _fetch_inference_profiles() -> list[dict]:
@@ -47,6 +59,8 @@ def _fetch_inference_profiles() -> list[dict]:
                 continue
             pid = p.get("inferenceProfileId", "")
             if "anthropic" not in pid:
+                continue
+            if not _supports_vision(pid):
                 continue
             name = p.get("inferenceProfileName", pid)
             profiles.append({"id": pid, "label": name})

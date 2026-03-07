@@ -1,8 +1,10 @@
 import base64
+import io
 import json
 import os
 import re
 import anthropic
+from PIL import Image
 
 # ---------------------------------------------------------------------------
 # AWS Bedrock — region is set automatically by Lambda via AWS_REGION env var
@@ -30,8 +32,33 @@ JSON fields:
 If you cannot identify the part, still provide your best guess with a low confidence score."""
 
 
+_MAX_BYTES = 4 * 1024 * 1024  # 4MB — safely under the 5MB Bedrock limit
+
+
+def _compress_image(image_bytes: bytes) -> tuple[bytes, str]:
+    """Resize/compress image to fit within Bedrock's 5MB limit."""
+    img = Image.open(io.BytesIO(image_bytes))
+    img = img.convert("RGB")
+    quality = 85
+    while True:
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        data = buf.getvalue()
+        if len(data) <= _MAX_BYTES or quality <= 40:
+            return data, "image/jpeg"
+        # Reduce quality first, then scale down
+        if quality > 40:
+            quality -= 15
+        else:
+            w, h = img.size
+            img = img.resize((w // 2, h // 2), Image.LANCZOS)
+            quality = 70
+
+
 def identify_part(image_bytes: bytes, media_type: str = "image/jpeg", model_id: str = None) -> dict:
     """Send image to Claude vision and return structured identification."""
+    if len(image_bytes) > _MAX_BYTES:
+        image_bytes, media_type = _compress_image(image_bytes)
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
 
     message = client.messages.create(

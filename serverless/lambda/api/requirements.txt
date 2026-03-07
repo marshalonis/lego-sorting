@@ -3,3 +3,4 @@ mangum>=0.17.0
 anthropic[bedrock]>=0.40.0
 httpx>=0.26.0
 python-multipart>=0.0.9
+Pillow>=10.0.0

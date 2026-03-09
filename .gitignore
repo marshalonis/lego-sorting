@@ -19,5 +19,8 @@ generate_test_images.py
 # Environment files
 .env
 
+# CDK build output
+serverless/cdk/cdk.out/
+
 # OS
 .DS_Store

@@ -1,80 +1,104 @@
 # LEGO Sorting Catalog
 
-A mobile-first web app to catalog LEGO bricks into Akro-Mils storage drawers.
+A mobile-first web app to catalog LEGO bricks into storage drawers.
 Take a photo of a brick → AI identifies it → app shows the drawer location (or lets you assign one).
 
-## Setup
+Live at **https://bootiak.org**
+
+## Architecture
+
+Fully serverless on AWS:
+
+| Component | Service |
+|---|---|
+| Frontend | S3 + CloudFront |
+| API | Lambda (FastAPI + Mangum) behind API Gateway HTTP API |
+| Database | DynamoDB (drawers + parts tables) |
+| Image storage | S3 (1-day lifecycle, presigned upload URLs) |
+| Parts catalog | S3 (Rebrickable CSV, ~60k parts) |
+| AI identification | AWS Bedrock (Claude Haiku) |
+| Auth | Cognito User Pool (invite-only, JWT) |
+| Custom domain | CloudFront + ACM certificate |
+
+## Deploying
+
+### Prerequisites
+
+- AWS CDK v2: `npm install -g aws-cdk`
+- [Finch](https://github.com/runfinch/finch) (or Docker) for Lambda bundling
+- Python virtualenv for CDK dependencies
+- An ACM certificate in `us-east-1` for your domain
+
+### First deploy
 
 ```bash
-# Activate the virtual environment
+cd serverless/cdk
+
+# Create and activate virtualenv
+python3 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies (first time only)
 pip install -r requirements.txt
+
+# Update constants at top of stacks/lego_stack.py
+# DOMAIN_NAME = "your-domain.com"
+# CERTIFICATE_ARN = "arn:aws:acm:us-east-1:..."
+
+# Deploy (replace profile/account as needed)
+CDK_DOCKER=finch \
+AWS_PROFILE=ChildAdmin \
+CDK_DEFAULT_ACCOUNT=535002893187 \
+PATH=".venv/bin:/opt/homebrew/bin:$PATH" \
+cdk deploy
 ```
 
-## Starting the Server
+### After deploy
 
-```bash
-AWS_ACCESS_KEY_ID=... \
-AWS_SECRET_ACCESS_KEY=... \
-AWS_REGION=us-east-1 \
-.venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000
-```
+1. **Create a Cognito user** — go to the Cognito User Pool in the AWS Console (the User Pool ID is in the CDK outputs), create a user with a temporary password. The user will be prompted to set a new password on first login.
 
-Override the default model (optional):
-```bash
-BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
-```
+2. **Load the parts catalog** — invoke the catalog loader Lambda once:
+   ```bash
+   aws lambda invoke --function-name <CatalogLoaderFunctionName from outputs> \
+     --profile ChildAdmin /dev/stdout
+   ```
+   This downloads ~60k parts from Rebrickable into S3 (~15 seconds).
 
-## Accessing the App
-
-Open **http://localhost:8000** in a browser.
-
-To use on your phone, connect both devices to the same WiFi and open:
-```
-http://<your-machine-ip>:8000
-```
-
-## First Time Setup
-
-1. Start the server
-2. Open the app and go to the **Data tab**
-3. Click **Download Parts Catalog** — downloads ~60k parts from Rebrickable into the local DB (one time, ~15 sec). Enables name search on the Identify tab.
-4. Click **Import Catalog** if you have a previously exported JSON to restore
-
-## Session Workflow
-
-1. Start the server
-2. **Data tab → Import** — upload your last exported JSON to restore the catalog
-3. Sort bricks:
-   - **Photo**: tap the camera button to photograph a brick → AI identifies it
-   - **Name search**: type a part name (e.g. "1x2 plate") to find the part number
-   - **Override**: enter a part number manually and click Look Up to verify against Brick Architect
-   - Assign unrecognized parts to a drawer
-4. **Data tab → Export** — download the updated JSON
-5. Stop the server
+3. **DNS** — point your domain to the CloudFront distribution. If using Route 53 at the zone apex, create an **A record (ALIAS)** pointing to the CloudFront domain (hosted zone ID `Z2FDTNDATAQYW2`). CNAMEs are not allowed at the apex.
 
 ## Features
 
-- **AI identification** via AWS Bedrock (Claude Haiku) — photo → part name, number, category, confidence
-- **Name search** — search 60k+ parts by name using local Rebrickable catalog
-- **Brick Architect integration** — part images, label downloads (.lbx), and QR code labels for Brother printers
-- **Drawer grid** — color-coded view: red = occupied, green = empty, dashed = inferred empty slot
+- **AI identification** — photograph a brick, Claude Haiku identifies part name, number, category, and confidence score
+- **Name search** — search 60k+ parts by name using the Rebrickable catalog
+- **Brick Architect integration** — part images, label downloads (`.lbx`) and QR code labels for Brother P-touch printers
+- **STL print link** — "Find STL (3D Print)" button searches Printables.com for 3D-printable models of the identified part, for printing storage labels or reference models
+- **Drawer grid** — visual cabinet layout showing occupied/empty drawers with part thumbnails
 - **Browse & edit** — search your catalog, move parts between drawers
-- **Import / Export** — JSON snapshot for persistence between sessions
+- **Import / Export** — JSON snapshot for backup and restore
 
 ## Drawer Location Scheme
 
 Drawers are labeled `Cabinet · Row · Column`, e.g. **1-B3** = Cabinet 1, Row B, Column 3.
 
-The drawer grid automatically infers empty slots — if you have A1–A4 and B3–B4, it will show B1 and B2 as available.
+The drawer grid automatically infers empty slots between existing drawers.
 
-## Environment Variables
+## Project Structure
 
-| Variable | Default | Description |
-|---|---|---|
-| `AWS_ACCESS_KEY_ID` | — | AWS credential |
-| `AWS_SECRET_ACCESS_KEY` | — | AWS credential |
-| `AWS_REGION` | `us-east-1` | AWS region for Bedrock |
-| `BEDROCK_MODEL_ID` | `us.anthropic.claude-haiku-4-5-20251001-v1:0` | Override default model |
+```
+serverless/
+├── cdk/                  # CDK infrastructure (Python)
+│   ├── app.py
+│   ├── cdk.json
+│   └── stacks/
+│       └── lego_stack.py
+├── lambda/
+│   ├── api/              # Main FastAPI Lambda
+│   │   ├── handler.py
+│   │   ├── database.py
+│   │   ├── ai_identify.py
+│   │   └── requirements.txt
+│   └── catalog_loader/   # One-time Rebrickable catalog loader
+│       └── handler.py
+└── frontend/             # Static SPA (HTML + CSS + JS)
+    ├── index.html
+    ├── app.js
+    └── style.css
+```

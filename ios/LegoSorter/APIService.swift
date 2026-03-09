@@ -5,8 +5,20 @@ class APIService: ObservableObject {
     private let baseURL = "https://bootiak.org"
     private let auth: AuthService
 
+    /// The currently selected project. Set by ProjectPickerView; persisted in UserDefaults.
+    @Published var currentProject: Project? {
+        didSet {
+            UserDefaults.standard.set(currentProject?.projectID, forKey: "currentProjectID")
+        }
+    }
+
     init(auth: AuthService) {
         self.auth = auth
+        // Restore last-used project ID — validated on first API call
+        if let saved = UserDefaults.standard.string(forKey: "currentProjectID") {
+            // We store just the ID here; the full Project object is fetched in ProjectPickerView
+            currentProject = Project(projectID: saved, name: "", createdBy: "", createdAt: "")
+        }
     }
 
     // MARK: - Core request
@@ -44,12 +56,39 @@ class APIService: ObservableObject {
         return try JSONDecoder().decode(type, from: data)
     }
 
+    private var projectPath: String {
+        guard let pid = currentProject?.projectID else { return "" }
+        return "/api/projects/\(pid.urlEncoded)"
+    }
+
+    // MARK: - Projects
+
+    func listProjects() async throws -> [Project] {
+        return try await decode([Project].self, path: "/api/projects")
+    }
+
+    func createProject(name: String) async throws -> Project {
+        return try await decode(Project.self, path: "/api/projects", method: "POST", body: ["name": name])
+    }
+
+    func getProject(projectID: String) async throws -> Project {
+        return try await decode(Project.self, path: "/api/projects/\(projectID.urlEncoded)")
+    }
+
+    func addMember(projectID: String, email: String) async throws -> ProjectMember {
+        return try await decode(ProjectMember.self, path: "/api/projects/\(projectID.urlEncoded)/members", method: "POST", body: ["email": email])
+    }
+
+    func removeMember(projectID: String, userID: String) async throws {
+        _ = try await request("/api/projects/\(projectID.urlEncoded)/members/\(userID.urlEncoded)", method: "DELETE")
+    }
+
     // MARK: - Parts
 
     func listParts(query: String = "") async throws -> [Part] {
         let path = query.isEmpty
-            ? "/api/parts"
-            : "/api/parts?q=\(query.urlEncoded)"
+            ? "\(projectPath)/parts"
+            : "\(projectPath)/parts?q=\(query.urlEncoded)"
         return try await decode([Part].self, path: path)
     }
 
@@ -59,7 +98,7 @@ class APIService: ObservableObject {
         if let v = drawerID { body["drawer_id"] = v }
         if let v = notes { body["notes"] = v }
         if let v = aiDescription { body["ai_description"] = v }
-        return try await decode(Part.self, path: "/api/parts", method: "POST", body: body)
+        return try await decode(Part.self, path: "\(projectPath)/parts", method: "POST", body: body)
     }
 
     func updatePart(partNum: String, partName: String? = nil, category: String? = nil, drawerID: String? = nil, notes: String? = nil) async throws -> Part {
@@ -68,24 +107,24 @@ class APIService: ObservableObject {
         if let v = category { body["category"] = v }
         if let v = drawerID { body["drawer_id"] = v }
         if let v = notes { body["notes"] = v }
-        return try await decode(Part.self, path: "/api/parts/\(partNum.urlEncoded)", method: "PUT", body: body)
+        return try await decode(Part.self, path: "\(projectPath)/parts/\(partNum.urlEncoded)", method: "PUT", body: body)
     }
 
     // MARK: - Drawers
 
     func listDrawers() async throws -> [Drawer] {
-        return try await decode([Drawer].self, path: "/api/drawers")
+        return try await decode([Drawer].self, path: "\(projectPath)/drawers")
     }
 
     func createDrawer(cabinet: Int, row: String, col: Int, label: String?, notes: String?) async throws -> Drawer {
         var body: [String: Any] = ["cabinet": cabinet, "row": row, "col": col]
         if let v = label { body["label"] = v }
         if let v = notes { body["notes"] = v }
-        return try await decode(Drawer.self, path: "/api/drawers", method: "POST", body: body)
+        return try await decode(Drawer.self, path: "\(projectPath)/drawers", method: "POST", body: body)
     }
 
     func getDrawerParts(drawerID: String) async throws -> DrawerWithParts {
-        return try await decode(DrawerWithParts.self, path: "/api/drawers/\(drawerID)/parts")
+        return try await decode(DrawerWithParts.self, path: "\(projectPath)/drawers/\(drawerID)/parts")
     }
 
     // MARK: - Identify
@@ -106,11 +145,11 @@ class APIService: ObservableObject {
     }
 
     func identify(s3Key: String) async throws -> IdentifyResponse {
-        return try await decode(IdentifyResponse.self, path: "/api/identify", method: "POST", body: ["s3_key": s3Key])
+        return try await decode(IdentifyResponse.self, path: "\(projectPath)/identify", method: "POST", body: ["s3_key": s3Key])
     }
 
     func lookupPart(_ partNum: String) async throws -> LookupResponse {
-        return try await decode(LookupResponse.self, path: "/api/lookup/\(partNum.urlEncoded)")
+        return try await decode(LookupResponse.self, path: "\(projectPath)/lookup/\(partNum.urlEncoded)")
     }
 
     // MARK: - Catalog
@@ -143,11 +182,11 @@ class APIService: ObservableObject {
     // MARK: - Export / Import
 
     func exportCatalog() async throws -> Data {
-        return try await request("/api/export")
+        return try await request("\(projectPath)/export")
     }
 
     func importCatalog(_ jsonData: Data) async throws -> (parts: Int, drawers: Int) {
-        guard let url = URL(string: baseURL + "/api/import") else { throw APIError.invalidURL }
+        guard let url = URL(string: baseURL + "\(projectPath)/import") else { throw APIError.invalidURL }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("Bearer \(auth.accessToken ?? "")", forHTTPHeaderField: "Authorization")
@@ -175,12 +214,14 @@ class APIService: ObservableObject {
     enum APIError: LocalizedError {
         case invalidURL
         case unauthorized
+        case noProject
         case serverError(String)
 
         var errorDescription: String? {
             switch self {
             case .invalidURL: return "Invalid URL"
             case .unauthorized: return "Session expired. Please log in again."
+            case .noProject: return "No project selected."
             case .serverError(let msg): return msg
             }
         }

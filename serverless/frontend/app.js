@@ -8,7 +8,7 @@ async function initAuth() {
 
   if (localStorage.getItem('access_token')) {
     const ok = await _validateToken();
-    if (ok) { showApp(); return; }
+    if (ok) { await showAppOrPicker(); return; }
   }
   document.getElementById('login-overlay').hidden = false;
 }
@@ -38,9 +38,22 @@ async function tryRefreshToken() {
   return false;
 }
 
-function showApp() {
+async function showAppOrPicker() {
   document.getElementById('login-overlay').hidden = true;
-  initCatalogSearch();
+  const savedId = localStorage.getItem('project_id');
+  if (savedId) {
+    // Validate the stored project (user may have been removed)
+    try {
+      const res = await apiFetch(`/api/projects/${savedId}`);
+      if (res.ok) {
+        const proj = await res.json();
+        selectProject(proj, false);
+        return;
+      }
+    } catch {}
+    localStorage.removeItem('project_id');
+  }
+  showProjectPicker();
 }
 
 async function _cognitoCall(target, body) {
@@ -80,7 +93,7 @@ async function submitLogin() {
 
     if (data.AuthenticationResult) {
       _storeTokens(data.AuthenticationResult);
-      showApp();
+      await showAppOrPicker();
       return;
     }
 
@@ -117,7 +130,7 @@ async function submitNewPassword() {
 
     if (data.AuthenticationResult) {
       _storeTokens(data.AuthenticationResult);
-      showApp();
+      await showAppOrPicker();
       return;
     }
 
@@ -137,6 +150,11 @@ function _storeTokens(result) {
 function logout() {
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
+  localStorage.removeItem('project_id');
+  currentProjectId = null;
+  currentProjectName = null;
+  document.getElementById('project-overlay').hidden = true;
+  document.getElementById('app-shell').hidden = true;
   document.getElementById('login-overlay').hidden = false;
 }
 
@@ -159,11 +177,79 @@ async function apiFetch(url, options = {}) {
   return res;
 }
 
+/* ── Projects ── */
+let currentProjectId = null;
+let currentProjectName = null;
+
+function apiProject(path, options = {}) {
+  return apiFetch(`/api/projects/${currentProjectId}${path}`, options);
+}
+
+async function showProjectPicker() {
+  document.getElementById('app-shell').hidden = true;
+  const overlay = document.getElementById('project-overlay');
+  overlay.hidden = false;
+
+  const listEl = document.getElementById('project-list');
+  listEl.innerHTML = '<p style="color:var(--text-muted);font-size:14px;">Loading…</p>';
+  document.getElementById('create-project-form').hidden = true;
+  document.getElementById('new-project-name').value = '';
+
+  try {
+    const res = await apiFetch('/api/projects');
+    const projects = await res.json();
+    if (projects.length === 0) {
+      listEl.innerHTML = '<p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">No projects yet. Create one to get started.</p>';
+    } else {
+      listEl.innerHTML = projects.map(p => `
+        <button class="btn btn-secondary w-full" style="margin-bottom:8px;text-align:left;"
+                onclick="selectProject(${JSON.stringify(p).replace(/"/g, '&quot;')}, true)">
+          <strong>${esc(p.name)}</strong>
+        </button>
+      `).join('');
+    }
+  } catch (err) {
+    listEl.innerHTML = `<p style="color:var(--error,#f66);font-size:14px;">${esc(err.message)}</p>`;
+  }
+}
+
+function showCreateProject() {
+  document.getElementById('create-project-form').hidden = false;
+  document.getElementById('new-project-name').focus();
+}
+
+async function createProject() {
+  const name = document.getElementById('new-project-name').value.trim();
+  if (!name) return;
+  try {
+    const res = await apiFetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const proj = await res.json();
+    selectProject(proj, true);
+  } catch (err) {
+    alert('Error creating project: ' + err.message);
+  }
+}
+
+function selectProject(proj, saveToStorage) {
+  currentProjectId = proj.project_id;
+  currentProjectName = proj.name;
+  if (saveToStorage) localStorage.setItem('project_id', proj.project_id);
+  document.getElementById('project-overlay').hidden = true;
+  document.getElementById('app-shell').hidden = false;
+  document.getElementById('current-project-name').textContent = proj.name;
+  initCatalogSearch();
+}
+
 /* ── State ── */
-let currentAi = null;      // Last AI identification result
-let currentPart = null;    // Existing part record (if found)
-let allDrawers = [];       // Cached drawers list
-let editingPartNum = null; // Part being edited in modal
+let currentAi = null;
+let currentPart = null;
+let allDrawers = [];
+let editingPartNum = null;
 
 /* ── Navigation ── */
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -180,7 +266,6 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   });
 });
 
-// Init on page load
 initAuth();
 
 /* ── View: Identify ── */
@@ -188,7 +273,6 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
-  // Show preview
   const reader = new FileReader();
   reader.onload = ev => {
     document.getElementById('preview-img').src = ev.target.result;
@@ -197,7 +281,6 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   document.getElementById('upload-prompt').hidden = true;
   document.getElementById('upload-preview').hidden = false;
 
-  // Identify
   await identifyImage(file);
   e.target.value = '';
 });
@@ -207,7 +290,6 @@ async function identifyImage(file) {
   document.getElementById('identify-loading').hidden = false;
 
   try {
-    // 1. Get presigned S3 upload URL
     const uploadRes = await apiFetch('/api/images/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -216,7 +298,6 @@ async function identifyImage(file) {
     if (!uploadRes.ok) throw new Error('Failed to get upload URL');
     const { upload_url, s3_key } = await uploadRes.json();
 
-    // 2. Upload image directly to S3 (presigned URL — no auth header)
     const s3Res = await fetch(upload_url, {
       method: 'PUT',
       headers: { 'Content-Type': file.type || 'image/jpeg' },
@@ -224,8 +305,7 @@ async function identifyImage(file) {
     });
     if (!s3Res.ok) throw new Error('Failed to upload image to S3');
 
-    // 3. Identify from S3 key
-    const res = await apiFetch('/api/identify', {
+    const res = await apiProject('/identify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ s3_key }),
@@ -254,13 +334,11 @@ function showIdentifyResult(data) {
   document.getElementById('result-description').textContent = ai.description || '';
   document.getElementById('manual-part-num').value = ai.part_num || '';
 
-  // Confidence badge
   const conf = ai.confidence ?? 0.5;
   const badge = document.getElementById('confidence-badge');
   badge.className = 'confidence-badge ' + (conf >= 0.8 ? 'confidence-high' : conf >= 0.5 ? 'confidence-med' : 'confidence-low');
   badge.textContent = Math.round(conf * 100) + '%';
 
-  // Location
   const foundEl = document.getElementById('location-found');
   const newEl = document.getElementById('location-new');
   const assignEl = document.getElementById('assign-section');
@@ -279,7 +357,6 @@ function showIdentifyResult(data) {
     editEl.hidden = true;
   }
 
-  // Brick Architect links
   const baSection = document.getElementById('brickarchitect-section');
   const partNum = ai.part_num || document.getElementById('manual-part-num').value.trim();
   if (partNum) {
@@ -323,7 +400,7 @@ async function relookup() {
   document.getElementById('lookup-loading').hidden = false;
 
   try {
-    const res = await apiFetch(`/api/lookup/${encodeURIComponent(partNum)}`);
+    const res = await apiProject(`/lookup/${encodeURIComponent(partNum)}`);
     const data = await res.json();
     document.getElementById('lookup-loading').hidden = true;
 
@@ -397,7 +474,7 @@ function openEditForCurrent() {
   openEditPartModal(currentPart);
 }
 
-/* ── Drawer Picker (for assigning a new part) ── */
+/* ── Drawer Picker ── */
 async function openDrawerPicker() {
   await fetchDrawers();
   const ai = currentAi || {};
@@ -426,7 +503,6 @@ function buildDrawerPickerHTML(ai) {
   } else {
     for (const d of allDrawers) {
       const label = drawerLabel(d);
-      // drawer id is a UUID string — must be quoted in onclick
       html += `
         <div class="drawer-option" onclick="selectDrawerOption(this, '${esc(d.id)}')" data-id="${esc(d.id)}">
           <div>
@@ -486,7 +562,7 @@ async function createAndSelectDrawer() {
   if (!cabinet || !row || !col) { alert('Fill in Cabinet, Row, and Column.'); return; }
 
   try {
-    const res = await apiFetch('/api/drawers', {
+    const res = await apiProject('/drawers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cabinet, row, col, label }),
@@ -495,7 +571,6 @@ async function createAndSelectDrawer() {
     const drawer = await res.json();
     await fetchDrawers();
 
-    // Rebuild picker list and select new drawer
     const list = document.getElementById('drawer-picker-list');
     list.innerHTML = '';
     for (const d of allDrawers) {
@@ -538,7 +613,7 @@ async function assignPartToDrawer() {
   };
 
   try {
-    const res = await apiFetch('/api/parts', {
+    const res = await apiProject('/parts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -629,7 +704,7 @@ async function savePartEdit() {
   if (editDrawerId !== null) body.drawer_id = editDrawerId;
 
   try {
-    const res = await apiFetch(`/api/parts/${encodeURIComponent(editingPartNum)}`, {
+    const res = await apiProject(`/parts/${encodeURIComponent(editingPartNum)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -645,7 +720,7 @@ async function savePartEdit() {
 async function deletePart(partNum) {
   if (!confirm(`Delete part ${partNum}? This cannot be undone.`)) return;
   try {
-    await apiFetch(`/api/parts/${encodeURIComponent(partNum)}`, {
+    await apiProject(`/parts/${encodeURIComponent(partNum)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ drawer_id: null }),
@@ -775,7 +850,7 @@ async function searchParts() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(async () => {
     const q = document.getElementById('search-input').value.trim();
-    const res = await apiFetch('/api/parts?q=' + encodeURIComponent(q));
+    const res = await apiProject('/parts?q=' + encodeURIComponent(q));
     const parts = await res.json();
     renderPartsList(parts);
   }, 250);
@@ -806,7 +881,7 @@ async function loadDrawers() {
 }
 
 async function fetchDrawers() {
-  const res = await apiFetch('/api/drawers');
+  const res = await apiProject('/drawers');
   allDrawers = await res.json();
 }
 
@@ -818,7 +893,6 @@ function renderDrawersGrid() {
     return;
   }
 
-  // Group existing drawers by cabinet
   const byCabinet = {};
   for (const d of allDrawers) {
     if (!byCabinet[d.cabinet]) byCabinet[d.cabinet] = [];
@@ -845,7 +919,6 @@ function renderDrawersGrid() {
                     class="drawer-tile-img" alt="" loading="lazy">`
             : '';
           const countLabel = occupied ? `${d.part_count} part${d.part_count !== 1 ? 's' : ''}` : 'Empty';
-          // drawer id is a UUID string — quoted in onclick
           return `
             <div class="${cls}" onclick="openDrawerDetail('${esc(d.id)}')">
               <div class="drawer-tile-id">${row}${col}</div>
@@ -876,7 +949,7 @@ function renderDrawersGrid() {
 }
 
 async function openDrawerDetail(drawerId) {
-  const res = await apiFetch(`/api/drawers/${drawerId}/parts`);
+  const res = await apiProject(`/drawers/${drawerId}/parts`);
   const data = await res.json();
   const d = data.drawer;
   const parts = data.parts;
@@ -942,7 +1015,7 @@ async function submitAddDrawer() {
   if (!cabinet || !row || !col) { alert('Fill in all required fields.'); return; }
 
   try {
-    const res = await apiFetch('/api/drawers', {
+    const res = await apiProject('/drawers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cabinet, row, col, label, notes }),
@@ -958,8 +1031,8 @@ async function submitAddDrawer() {
 /* ── View: Data ── */
 async function loadDataStats() {
   const [partsRes, drawersRes, catalogRes] = await Promise.all([
-    apiFetch('/api/parts'),
-    apiFetch('/api/drawers'),
+    apiProject('/parts'),
+    apiProject('/drawers'),
     apiFetch('/api/catalog/status'),
   ]);
   const parts = await partsRes.json();
@@ -979,6 +1052,7 @@ async function loadDataStats() {
   }
 
   await loadModelSelector();
+  await loadProjectMembers();
 }
 
 async function loadModelSelector() {
@@ -1013,7 +1087,7 @@ async function setModel(modelId) {
 
 async function exportCatalog() {
   try {
-    const res = await apiFetch('/api/export');
+    const res = await apiProject('/export');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1037,9 +1111,8 @@ async function importCatalog(input) {
   resultEl.textContent = 'Importing…';
 
   try {
-    // Read the JSON file as text and POST directly — avoids multipart issues with API Gateway
     const text = await file.text();
-    const res = await apiFetch('/api/import', {
+    const res = await apiProject('/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: text,
@@ -1054,6 +1127,46 @@ async function importCatalog(input) {
     resultEl.textContent = 'Import failed: ' + err.message;
   }
   input.value = '';
+}
+
+/* ── Project members ── */
+async function loadProjectMembers() {
+  try {
+    const res = await apiFetch(`/api/projects/${currentProjectId}`);
+    const proj = await res.json();
+    const members = proj.members || [];
+    const el = document.getElementById('project-members');
+    el.innerHTML = members.map(m =>
+      `<div style="font-size:13px;color:var(--text-muted);padding:4px 0;">${esc(m.email)}</div>`
+    ).join('');
+  } catch {}
+}
+
+async function inviteMember() {
+  const email = document.getElementById('invite-email').value.trim();
+  const resultEl = document.getElementById('invite-result');
+  if (!email) return;
+
+  resultEl.hidden = false;
+  resultEl.className = 'import-result';
+  resultEl.textContent = 'Inviting…';
+
+  try {
+    const res = await apiFetch(`/api/projects/${currentProjectId}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed');
+    resultEl.className = 'import-result success';
+    resultEl.textContent = `${email} added to project.`;
+    document.getElementById('invite-email').value = '';
+    await loadProjectMembers();
+  } catch (err) {
+    resultEl.className = 'import-result error';
+    resultEl.textContent = 'Error: ' + err.message;
+  }
 }
 
 /* ── Modal ── */

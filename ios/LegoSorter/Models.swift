@@ -1,5 +1,41 @@
 import Foundation
 
+// MARK: - Projects
+
+struct Project: Codable, Identifiable {
+    let projectID: String
+    let name: String
+    let createdBy: String
+    let createdAt: String
+    var members: [ProjectMember]?
+
+    var id: String { projectID }
+
+    enum CodingKeys: String, CodingKey {
+        case projectID = "project_id"
+        case name
+        case createdBy = "created_by"
+        case createdAt = "created_at"
+        case members
+    }
+}
+
+struct ProjectMember: Codable, Identifiable {
+    let projectID: String
+    let userID: String
+    let email: String
+    let addedAt: String
+
+    var id: String { userID }
+
+    enum CodingKeys: String, CodingKey {
+        case projectID = "project_id"
+        case userID = "user_id"
+        case email
+        case addedAt = "added_at"
+    }
+}
+
 // MARK: - Auth
 
 struct CognitoConfig: Codable {

@@ -5,6 +5,8 @@ struct DataView: View {
     @EnvironmentObject var auth: AuthService
     @EnvironmentObject var api: APIService
 
+    @State private var showProjectPicker = false
+
     @State private var models: ModelsResponse?
     @State private var catalogStatus: CatalogStatus?
     @State private var partCount = 0
@@ -25,6 +27,16 @@ struct DataView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Project
+                if let project = api.currentProject {
+                    Section("Project") {
+                        NavigationLink(project.name) {
+                            ProjectManagementView(project: project)
+                        }
+                        Button("Switch Project") { showProjectPicker = true }
+                    }
+                }
+
                 // AI Model
                 Section("AI Model") {
                     if let models {
@@ -96,6 +108,9 @@ struct DataView: View {
             }
             .navigationTitle("Data")
             .task { await loadAll() }
+            .sheet(isPresented: $showProjectPicker) {
+                ProjectPickerView()
+            }
             .fileExporter(
                 isPresented: $showExporter,
                 document: JSONDocument(data: exportedData ?? Data()),
@@ -111,13 +126,16 @@ struct DataView: View {
     private func loadAll() async {
         async let m = try? api.listModels()
         async let cs = try? api.catalogStatus()
-        async let parts = try? api.listParts()
-        async let drawers = try? api.listDrawers()
 
         models = await m
         catalogStatus = await cs
-        partCount = await parts?.count ?? 0
-        drawerCount = await drawers?.count ?? 0
+
+        if api.currentProject != nil {
+            async let parts = try? api.listParts()
+            async let drawers = try? api.listDrawers()
+            partCount = await parts?.count ?? 0
+            drawerCount = await drawers?.count ?? 0
+        }
     }
 
     private func setModel(_ id: String) async {

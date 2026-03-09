@@ -71,6 +71,28 @@ class LegoSortingStack(Stack):
 
         # ── DynamoDB Tables ──────────────────────────────────────────────────
 
+        projects_table = dynamodb.Table(
+            self, "ProjectsTable",
+            table_name="lego-projects",
+            partition_key=dynamodb.Attribute(name="project_id", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+
+        members_table = dynamodb.Table(
+            self, "MembersTable",
+            table_name="lego-project-members",
+            partition_key=dynamodb.Attribute(name="project_id", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="user_id", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+        # GSI to list all projects a user belongs to
+        members_table.add_global_secondary_index(
+            index_name="user-index",
+            partition_key=dynamodb.Attribute(name="user_id", type=dynamodb.AttributeType.STRING),
+        )
+
         drawers_table = dynamodb.Table(
             self, "DrawersTable",
             table_name="lego-drawers",
@@ -78,20 +100,29 @@ class LegoSortingStack(Stack):
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             removal_policy=RemovalPolicy.RETAIN,
         )
-        # GSI to look up drawer by cabinet/row/col
+        # GSI to look up drawer by project + location (location_key now includes project_id)
         drawers_table.add_global_secondary_index(
             index_name="location-index",
             partition_key=dynamodb.Attribute(name="location_key", type=dynamodb.AttributeType.STRING),
         )
+        # GSI to list all drawers in a project
+        drawers_table.add_global_secondary_index(
+            index_name="project-index",
+            partition_key=dynamodb.Attribute(name="project_id", type=dynamodb.AttributeType.STRING),
+        )
 
+        # Parts table: composite key — project_id (PK) + part_num (SK)
+        # This allows efficient per-project queries and supports the same part_num in multiple projects.
+        # NOTE: This table was recreated from scratch (key schema change) — DESTROY policy allows replacement.
         parts_table = dynamodb.Table(
             self, "PartsTable",
-            table_name="lego-parts",
-            partition_key=dynamodb.Attribute(name="part_num", type=dynamodb.AttributeType.STRING),
+            table_name="lego-parts-v2",
+            partition_key=dynamodb.Attribute(name="project_id", type=dynamodb.AttributeType.STRING),
+            sort_key=dynamodb.Attribute(name="part_num", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            removal_policy=RemovalPolicy.RETAIN,
+            removal_policy=RemovalPolicy.DESTROY,
         )
-        # GSI to list all parts in a drawer
+        # GSI to list all parts in a drawer (drawer_id is a UUID, implicitly project-scoped)
         parts_table.add_global_secondary_index(
             index_name="drawer-index",
             partition_key=dynamodb.Attribute(name="drawer_id", type=dynamodb.AttributeType.STRING),
@@ -120,7 +151,6 @@ class LegoSortingStack(Stack):
 
         # ── S3 Buckets ───────────────────────────────────────────────────────
 
-        # UI bucket — private, served via CloudFront only
         ui_bucket = s3.Bucket(
             self, "UIBucket",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
@@ -132,14 +162,13 @@ class LegoSortingStack(Stack):
             )],
         )
 
-        # Images bucket — brick photos uploaded directly from browser
         images_bucket = s3.Bucket(
             self, "ImagesBucket",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.DESTROY,
             auto_delete_objects=True,
             lifecycle_rules=[
-                s3.LifecycleRule(expiration=Duration.days(1))  # auto-delete after 1 day
+                s3.LifecycleRule(expiration=Duration.days(1))
             ],
             cors=[s3.CorsRule(
                 allowed_methods=[s3.HttpMethods.PUT, s3.HttpMethods.GET],
@@ -148,7 +177,6 @@ class LegoSortingStack(Stack):
             )],
         )
 
-        # Catalog bucket — Rebrickable parts CSV
         catalog_bucket = s3.Bucket(
             self, "CatalogBucket",
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
@@ -165,12 +193,19 @@ class LegoSortingStack(Stack):
             ],
         )
 
-        # Bedrock access
         lambda_role.add_to_policy(iam.PolicyStatement(
             actions=["bedrock:InvokeModel", "bedrock:ListInferenceProfiles"],
             resources=["*"],
         ))
 
+        # Cognito user lookup for member invite-by-email
+        lambda_role.add_to_policy(iam.PolicyStatement(
+            actions=["cognito-idp:ListUsers"],
+            resources=[user_pool.user_pool_arn],
+        ))
+
+        projects_table.grant_read_write_data(lambda_role)
+        members_table.grant_read_write_data(lambda_role)
         drawers_table.grant_read_write_data(lambda_role)
         parts_table.grant_read_write_data(lambda_role)
         images_bucket.grant_read_write(lambda_role)
@@ -199,6 +234,8 @@ class LegoSortingStack(Stack):
             environment={
                 "DRAWERS_TABLE": drawers_table.table_name,
                 "PARTS_TABLE": parts_table.table_name,
+                "PROJECTS_TABLE": projects_table.table_name,
+                "MEMBERS_TABLE": members_table.table_name,
                 "IMAGES_BUCKET": images_bucket.bucket_name,
                 "CATALOG_BUCKET": catalog_bucket.bucket_name,
                 "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
@@ -206,7 +243,6 @@ class LegoSortingStack(Stack):
             },
         )
 
-        # Catalog loader — separate Lambda for one-time Rebrickable download
         _catalog_src = os.path.join(os.path.dirname(__file__), "../../lambda/catalog_loader")
         catalog_loader_lambda = lambda_.Function(
             self, "CatalogLoaderLambda",
@@ -265,10 +301,8 @@ class LegoSortingStack(Stack):
 
         # ── CloudFront ────────────────────────────────────────────────────────
 
-        # OAC for S3 UI bucket
         oac = cloudfront.S3OriginAccessControl(self, "OAC")
 
-        # API Gateway origin
         api_origin = origins.HttpOrigin(
             f"{http_api.http_api_id}.execute-api.{self.region}.amazonaws.com",
         )
@@ -305,7 +339,6 @@ class LegoSortingStack(Stack):
             ],
         )
 
-        # Grant CloudFront access to UI bucket
         ui_bucket.add_to_resource_policy(iam.PolicyStatement(
             actions=["s3:GetObject"],
             resources=[ui_bucket.arn_for_objects("*")],
@@ -317,7 +350,6 @@ class LegoSortingStack(Stack):
             },
         ))
 
-        # Deploy frontend to S3 UI bucket
         s3_deploy.BucketDeployment(
             self, "DeployUI",
             sources=[s3_deploy.Source.asset(
@@ -352,7 +384,7 @@ class LegoSortingStack(Stack):
         )
         CfnOutput(self, "UserPoolId",
             value=user_pool.user_pool_id,
-            description="Cognito User Pool ID — create your user here in the AWS Console",
+            description="Cognito User Pool ID",
         )
         CfnOutput(self, "UserPoolClientId",
             value=user_pool_client.user_pool_client_id,

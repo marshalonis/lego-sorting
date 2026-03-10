@@ -21,6 +21,17 @@
 - [ ] **Parts catalog download progress** — show progress bar or streaming status instead of a single button with no feedback
 - [ ] **User management** — admin view to list/deactivate Cognito users without needing AWS Console
 
+## Sets & Minifigures (new feature)
+
+- [ ] **Set search** — search Rebrickable by set name or number, view set details (year, theme, part count, image)
+- [ ] **Have / Need breakdown** — for any set, show which parts are already in the catalog vs. still needed
+- [ ] **Catalog a set** — mark a set as owned (stored per project, separate from individual parts)
+- [ ] **Catalog minifigures** — track owned minifigures independently or linked to a set
+- [ ] **My Sets view** — list of owned sets with swipe-to-delete
+- [ ] **Rebrickable API key** — store in AWS SSM Parameter Store; add IAM permission to Lambda
+- [ ] **S3 cache for set parts** — cache Rebrickable set parts lists in S3 (7-day TTL) to stay within 1000 req/day free tier limit
+- [ ] **Rebrickable quota guard** — track daily API call count in DynamoDB; return 429 if approaching limit
+
 ## Infrastructure
 
 - [ ] **Cost monitoring** — set up AWS budget alert for Bedrock usage

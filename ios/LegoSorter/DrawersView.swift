@@ -228,8 +228,10 @@ struct DrawerDetailSheet: View {
             }
             .sheet(item: $selectedPart) { part in
                 EditPartSheet(part: part) { _ in
-                    selectedPart = nil
-                    drawerWithParts = try? await api.getDrawerParts(drawerID: drawer.id)
+                    Task {
+                        selectedPart = nil
+                        drawerWithParts = try? await api.getDrawerParts(drawerID: drawer.id)
+                    }
                 }
             }
         }

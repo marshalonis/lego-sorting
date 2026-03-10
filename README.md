@@ -55,6 +55,18 @@ cdk deploy
 
 1. **Create a Cognito user** — go to the Cognito User Pool in the AWS Console (the User Pool ID is in the CDK outputs), create a user with a temporary password. The user will be prompted to set a new password on first login.
 
+   Or via CLI:
+   ```bash
+   aws cognito-idp admin-create-user \
+     --user-pool-id <UserPoolId from outputs> \
+     --username their@email.com \
+     --temporary-password TempPass123! \
+     --user-attributes Name=email,Value=their@email.com Name=email_verified,Value=true \
+     --profile <your-profile>
+   ```
+
+   > **Note:** A Cognito account must exist before a user can be invited to a project. Inviting from within the app looks up the user by email — if the account doesn't exist yet, you'll get "No user found with email". Create the Cognito account first, then invite from the app.
+
 2. **Load the parts catalog** — invoke the catalog loader Lambda once:
    ```bash
    aws lambda invoke --function-name <CatalogLoaderFunctionName from outputs> \

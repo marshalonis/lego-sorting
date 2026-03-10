@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Combine
 
 class APIService: ObservableObject {
     private let baseURL = "https://bootiak.org"

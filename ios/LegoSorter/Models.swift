@@ -101,6 +101,18 @@ struct Drawer: Codable, Identifiable {
         return URL(string: "https://brickarchitect.com/content/parts-large/\(num).png")
     }
 
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        cabinet = try c.decode(Int.self, forKey: .cabinet)
+        row = try c.decode(String.self, forKey: .row)
+        col = try c.decode(Int.self, forKey: .col)
+        label = try? c.decode(String.self, forKey: .label)
+        notes = try? c.decode(String.self, forKey: .notes)
+        partCount = (try? c.decode(Int.self, forKey: .partCount)) ?? 0
+        firstPartNum = try? c.decode(String.self, forKey: .firstPartNum)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, cabinet, row, col, label, notes
         case partCount = "part_count"
@@ -142,13 +154,13 @@ struct LocationInfo: Codable {
     }
 }
 
-struct IdentifyResponse: Codable {
+struct IdentifyResponse: Codable, Sendable {
     let ai: AIResult
     let existing: Part?
     let location: LocationInfo?
 }
 
-struct UploadResponse: Codable {
+struct UploadResponse: Codable, Sendable {
     let uploadURL: String
     let s3Key: String
 

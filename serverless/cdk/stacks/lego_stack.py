@@ -200,7 +200,7 @@ class LegoSortingStack(Stack):
 
         # Cognito user lookup for member invite-by-email
         lambda_role.add_to_policy(iam.PolicyStatement(
-            actions=["cognito-idp:ListUsers"],
+            actions=["cognito-idp:ListUsers", "cognito-idp:AdminGetUser"],
             resources=[user_pool.user_pool_arn],
         ))
 

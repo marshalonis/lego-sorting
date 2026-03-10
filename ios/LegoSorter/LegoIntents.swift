@@ -1,6 +1,8 @@
 import AppIntents
+import SwiftUI
 import UIKit
 import Security
+import UniformTypeIdentifiers
 
 // MARK: - Identify Intent
 
@@ -12,7 +14,7 @@ struct IdentifyLegoPartIntent: AppIntent {
     )
     static var openAppWhenRun = false
 
-    @Parameter(title: "Photo of LEGO Part", supportedTypeIdentifiers: ["public.image"])
+    @Parameter(title: "Photo of LEGO Part", supportedContentTypes: [.image])
     var photo: IntentFile
 
     func perform() async throws -> some ProvidesDialog & ShowsSnippetView {
@@ -23,12 +25,7 @@ struct IdentifyLegoPartIntent: AppIntent {
             )
         }
 
-        let rawData: Data
-        do {
-            rawData = try photo.data
-        } catch {
-            throw IntentError.noImage
-        }
+        let rawData = photo.data
 
         guard let image = UIImage(data: rawData) else {
             throw IntentError.noImage
@@ -57,8 +54,8 @@ struct IdentifyLegoPartIntent: AppIntent {
 
     // MARK: - Snippet views
 
-    @MainActor
-    private func resultSnippet(ai: AIResult, location: LocationInfo?) -> some View {
+    private func resultSnippet(ai: AIResult, location: LocationInfo?) -> AnyView {
+        AnyView(
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -110,20 +107,53 @@ struct IdentifyLegoPartIntent: AppIntent {
             }
         }
         .padding()
+        )
     }
 
-    @MainActor
-    private func errorSnippet(_ message: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
-            Text(message).font(.subheadline)
-        }
-        .padding()
+    private func errorSnippet(_ message: String) -> AnyView {
+        AnyView(
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.red)
+                Text(message).font(.subheadline)
+            }
+            .padding()
+        )
     }
 
     // MARK: - API calls (self-contained, no dependency on app's service classes)
 
-    private func identifyPart(imageData: Data, token: String) async throws -> IdentifyResponse {
+    // Local decodable types — self-contained, avoids Swift 6 actor-isolation issues
+    // with shared model conformances.
+    private struct _UploadResponse: Decodable, Sendable {
+        let uploadURL: String
+        let s3Key: String
+        enum CodingKeys: String, CodingKey {
+            case uploadURL = "upload_url"
+            case s3Key = "s3_key"
+        }
+    }
+
+    private struct _AIResult: Decodable, Sendable {
+        let partNum: String?
+        let name: String
+        let color: String?
+        let confidence: Double
+        enum CodingKeys: String, CodingKey {
+            case partNum = "part_num"
+            case name, color, confidence
+        }
+    }
+
+    private struct _LocationInfo: Decodable, Sendable {
+        let display: String
+    }
+
+    private struct _IdentifyResponse: Decodable, Sendable {
+        let ai: _AIResult
+        let location: _LocationInfo?
+    }
+
+    private func identifyPart(imageData: Data, token: String) async throws -> (ai: AIResult, location: LocationInfo?) {
         let base = "https://bootiak.org"
 
         // 1. Get presigned upload URL
@@ -133,7 +163,7 @@ struct IdentifyLegoPartIntent: AppIntent {
         uploadReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
         uploadReq.httpBody = try JSONSerialization.data(withJSONObject: ["content_type": "image/jpeg"])
         let (uploadData, _) = try await URLSession.shared.data(for: uploadReq)
-        let upload = try JSONDecoder().decode(UploadResponse.self, from: uploadData)
+        let upload = try JSONDecoder().decode(_UploadResponse.self, from: uploadData)
 
         // 2. Upload to S3
         var s3Req = URLRequest(url: URL(string: upload.uploadURL)!)
@@ -149,7 +179,20 @@ struct IdentifyLegoPartIntent: AppIntent {
         identifyReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
         identifyReq.httpBody = try JSONSerialization.data(withJSONObject: ["s3_key": upload.s3Key])
         let (identifyData, _) = try await URLSession.shared.data(for: identifyReq)
-        return try JSONDecoder().decode(IdentifyResponse.self, from: identifyData)
+        let decoded = try JSONDecoder().decode(_IdentifyResponse.self, from: identifyData)
+
+        let ai = AIResult(
+            partNum: decoded.ai.partNum,
+            name: decoded.ai.name,
+            category: nil,
+            color: decoded.ai.color,
+            description: nil,
+            confidence: decoded.ai.confidence
+        )
+        let location = decoded.location.map {
+            LocationInfo(drawerID: "", cabinet: nil, row: nil, col: nil, display: $0.display)
+        }
+        return (ai, location)
     }
 
     private func compressImage(_ image: UIImage, maxBytes: Int = 4 * 1024 * 1024) -> Data {

@@ -24,3 +24,10 @@ serverless/cdk/cdk.out/
 
 # OS
 .DS_Store
+
+# Xcode build artifacts
+ios/LegoSorter.xcodeproj/xcuserdata/
+ios/LegoSorter.xcodeproj/project.xcworkspace/xcuserdata/
+ios/DerivedData/
+*.xccheckout
+*.moved-aside

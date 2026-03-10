@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 class AppState: ObservableObject {
     let auth = AuthService()
@@ -6,6 +7,18 @@ class AppState: ObservableObject {
 
     /// True while we are validating a restored project ID on startup.
     @Published var isValidatingProject = false
+
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        // Forward auth and api changes so the App body re-renders on login/logout/project changes.
+        auth.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        api.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
 
     /// Validates the restored project ID by fetching it from the API.
     /// Clears currentProject if the fetch fails (e.g., removed from project, project deleted).

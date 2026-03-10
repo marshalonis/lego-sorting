@@ -3,6 +3,7 @@ import PhotosUI
 
 struct IdentifyView: View {
     @EnvironmentObject var api: APIService
+    let onPartSaved: () -> Void
 
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedImage: UIImage?
@@ -20,6 +21,10 @@ struct IdentifyView: View {
 
     @State private var showDrawerPicker = false
     @State private var showEditPart = false
+    @State private var showSourcePicker = false
+    @State private var showCamera = false
+    @State private var showLibrary = false
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -41,9 +46,10 @@ struct IdentifyView: View {
                     DrawerPickerSheet(
                         ai: result.ai,
                         manualPartNum: manualPartNum,
-                        onSaved: { updatedResult in
-                            self.result = updatedResult
+                        onSaved: { _ in
                             showDrawerPicker = false
+                            resetState()
+                            onPartSaved()
                         }
                     )
                 }
@@ -52,6 +58,26 @@ struct IdentifyView: View {
                 if let part = result?.existing {
                     EditPartSheet(part: part, onSaved: { _ in showEditPart = false })
                 }
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraPickerView { image in
+                    showCamera = false
+                    if let image {
+                        selectedImage = image
+                        result = nil
+                        errorMessage = nil
+                        manualPartNum = ""
+                        lookupResult = nil
+                        Task { await identifyImage(image) }
+                    }
+                }
+            }
+            .confirmationDialog("Add Photo", isPresented: $showSourcePicker) {
+                Button("Take Photo") { showCamera = true }
+                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                    Text("Choose from Library")
+                }
+                Button("Cancel", role: .cancel) {}
             }
         }
     }
@@ -76,28 +102,22 @@ struct IdentifyView: View {
                 }
                 .buttonStyle(.bordered)
             } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
-                    .frame(height: 200)
-                    .overlay {
-                        VStack(spacing: 12) {
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 44))
-                                .foregroundColor(.secondary)
-                            Text("Tap to take photo or choose image")
-                                .foregroundColor(.secondary)
-                                .font(.subheadline)
-                            PhotosPicker(
-                                selection: $selectedItem,
-                                matching: .images,
-                                photoLibrary: .shared()
-                            ) {
-                                Text("Choose Image")
-                                    .buttonStyle(.borderedProminent)
+                Button(action: { showSourcePicker = true }) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(.secondarySystemBackground))
+                        .frame(height: 200)
+                        .overlay {
+                            VStack(spacing: 12) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 44))
+                                    .foregroundColor(.secondary)
+                                Text("Tap to take photo or choose image")
+                                    .foregroundColor(.secondary)
+                                    .font(.subheadline)
                             }
-                            .buttonStyle(.borderedProminent)
                         }
-                    }
+                }
+                .buttonStyle(.plain)
             }
 
             if let errorMessage {
@@ -147,9 +167,21 @@ struct IdentifyView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            TextField("e.g. 1x2 plate, technic axle…", text: $catalogQuery)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: catalogQuery) { _, q in
+            HStack {
+                TextField("e.g. 1x2 plate, technic axle…", text: $catalogQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($searchFocused)
+                if searchFocused || !catalogQuery.isEmpty {
+                    Button("Cancel") {
+                        catalogQuery = ""
+                        catalogResults = []
+                        catalogSearchTask?.cancel()
+                        searchFocused = false
+                    }
+                    .foregroundColor(.accentColor)
+                }
+            }
+            .onChange(of: catalogQuery) { _, q in
                     catalogSearchTask?.cancel()
                     catalogResults = []
                     guard q.count >= 2 else { return }
@@ -202,7 +234,20 @@ struct IdentifyView: View {
         catalogQuery = ""
         catalogResults = []
         manualPartNum = part.partNum
-        Task { await relookup(partNum: part.partNum) }
+
+        let ai = AIResult(
+            partNum: part.partNum,
+            name: part.name,
+            category: nil,
+            color: nil,
+            description: nil,
+            confidence: 1.0
+        )
+        let location: LocationInfo? = part.locationDisplay.map { display in
+            LocationInfo(drawerID: part.drawerID ?? "", cabinet: part.cabinet,
+                         row: part.row, col: part.col, display: display)
+        }
+        result = IdentifyResponse(ai: ai, existing: nil, location: location)
     }
 
     // MARK: - Loading
@@ -361,6 +406,17 @@ struct IdentifyView: View {
 
     // MARK: - Actions
 
+    private func resetState() {
+        selectedItem = nil
+        selectedImage = nil
+        result = nil
+        errorMessage = nil
+        manualPartNum = ""
+        lookupResult = nil
+        catalogQuery = ""
+        catalogResults = []
+    }
+
     private func relookup(partNum: String) async {
         guard !partNum.isEmpty else { return }
         isLookingUp = true
@@ -374,7 +430,7 @@ struct IdentifyView: View {
     private func applyLookup(_ lr: LookupResponse) {
         manualPartNum = lr.partNum
         lookupResult = nil
-        if var current = result {
+        if let current = result {
             // Patch the AI result with the looked-up part number
             let updatedAI = AIResult(
                 partNum: lr.partNum,
@@ -385,6 +441,39 @@ struct IdentifyView: View {
                 confidence: current.ai.confidence
             )
             result = IdentifyResponse(ai: updatedAI, existing: lr.existing, location: nil)
+        }
+    }
+}
+
+// MARK: - Camera picker
+
+import UIKit
+
+struct CameraPickerView: UIViewControllerRepresentable {
+    let onImage: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onImage: onImage) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (UIImage?) -> Void
+        init(onImage: @escaping (UIImage?) -> Void) { self.onImage = onImage }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            onImage(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onImage(nil)
         }
     }
 }

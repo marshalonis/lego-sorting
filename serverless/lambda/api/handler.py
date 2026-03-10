@@ -295,16 +295,31 @@ def add_member(project_id: str, body: MemberAdd, user_id: str = Depends(verify_m
     """Add a member by email. The invited user must already have a Cognito account."""
     email = body.email.strip().lower()
     try:
+        # First try filtering by email attribute
         resp = _cognito.list_users(
             UserPoolId=COGNITO_USER_POOL_ID,
             Filter=f'email = "{email}"',
             Limit=1,
         )
         users = resp.get("Users", [])
+
+        # Fallback: search by username (Cognito console often sets username = email)
+        if not users:
+            try:
+                user = _cognito.admin_get_user(
+                    UserPoolId=COGNITO_USER_POOL_ID,
+                    Username=email,
+                )
+                users = [user]
+            except _cognito.exceptions.UserNotFoundException:
+                pass
+
         if not users:
             raise HTTPException(status_code=404, detail=f"No user found with email {email}")
+
+        user_attrs = users[0].get("Attributes") or users[0].get("UserAttributes", [])
         invited_user_id = next(
-            (a["Value"] for a in users[0].get("Attributes", []) if a["Name"] == "sub"),
+            (a["Value"] for a in user_attrs if a["Name"] == "sub"),
             None,
         )
         if not invited_user_id:
@@ -343,6 +358,8 @@ def get_drawer_parts(project_id: str, drawer_id: str, user_id: str = Depends(ver
     if not drawer or drawer.get("project_id") != project_id:
         raise HTTPException(status_code=404, detail="Drawer not found")
     parts = db.get_drawer_parts(project_id, drawer_id)
+    drawer["part_count"] = len(parts)
+    drawer.setdefault("first_part_num", None)
     return {"drawer": drawer, "parts": parts}
 
 

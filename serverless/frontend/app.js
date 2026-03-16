@@ -250,6 +250,7 @@ let currentAi = null;
 let currentPart = null;
 let allDrawers = [];
 let editingPartNum = null;
+let _catalogSelectedName = ''; // Name from catalog search selection
 
 /* ── Navigation ── */
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -483,7 +484,7 @@ async function openDrawerPicker() {
 
 function buildDrawerPickerHTML(ai) {
   const partNum = document.getElementById('manual-part-num').value.trim() || ai.part_num || '';
-  const partName = ai.name || '';
+  const partName = ai.name || _catalogSelectedName || '';
 
   let html = `
     <div style="margin-bottom:14px;">
@@ -786,6 +787,8 @@ function selectCatalogResult(partNum, name) {
   document.getElementById('catalog-search-input').value = '';
   document.getElementById('catalog-search-results').hidden = true;
   document.getElementById('catalog-no-results').hidden = true;
+
+  _catalogSelectedName = name;
 
   document.getElementById('manual-part-num').value = partNum;
 
